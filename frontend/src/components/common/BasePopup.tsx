@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, ReactNode } from 'react';
+import type React from 'react';
+import { useEffect, useRef, ReactNode } from 'react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 
 interface BasePopupProps {

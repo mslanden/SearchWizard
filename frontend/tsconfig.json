@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "es2017",
-    "lib": ["dom", "dom.iterable", "es6"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "es6"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": false,
@@ -11,7 +15,7 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "incremental": true,
     "plugins": [
       {
@@ -20,7 +24,9 @@
     ],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": [
+        "./src/*"
+      ]
     },
     "forceConsistentCasingInFileNames": true,
     "noImplicitAny": true,
@@ -38,7 +44,13 @@
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
+    ".next/dev/types/**/*.ts",
     ".next/types/**/*.ts"
   ],
-  "exclude": ["node_modules", "**/*.js", "**/*.jsx"]
+  "exclude": [
+    "node_modules",
+    "**/*.js",
+    "**/*.jsx",
+    ".next/types/validator.ts"
+  ]
 }

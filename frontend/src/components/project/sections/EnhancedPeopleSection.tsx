@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useMemo, useCallback, memo } from 'react';
+import type React from 'react';
+import { useState, useMemo, useCallback, memo } from 'react';
 import { 
   MagnifyingGlassIcon, 
   AdjustmentsHorizontalIcon,

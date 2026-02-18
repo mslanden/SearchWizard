@@ -1,4 +1,5 @@
-import React, { useState, useCallback } from 'react';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import BasePopup from '../common/BasePopup';
 import { useEnhancedErrorHandler } from '../../contexts/ToastContext';
 import { ArtifactUploadData } from '../../types/project';

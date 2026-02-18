@@ -1,4 +1,5 @@
-import React, { memo, useCallback } from 'react';
+import type React from 'react';
+import { memo, useCallback } from 'react';
 import { PlusIcon, BuildingOfficeIcon, BriefcaseIcon } from '@heroicons/react/24/outline';
 import { Artifact } from '../../../types/project';
 
