@@ -229,7 +229,7 @@ Return as JSON with keys: colors, typography, layout, elements, overall_style, c
                     })
                 
                 vision_response = anthropic_client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
+                    model="claude-sonnet-4-6",
                     max_tokens=2000,
                     messages=[{
                         "role": "user", 
@@ -274,7 +274,7 @@ Return ONLY the template prompt text that will be used for document generation."
 
         # Generate template prompt
         template_response = anthropic_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-6",
             max_tokens=3000,
             messages=[{
                 "role": "user",
@@ -512,7 +512,7 @@ Generate a complete, professional document that follows the template structure a
         
         # Generate document
         response = anthropic_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-6",
             max_tokens=4000,
             messages=[{
                 "role": "user",
