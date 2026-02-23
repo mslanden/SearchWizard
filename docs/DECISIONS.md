@@ -109,3 +109,50 @@ Results are cached in Redis (or in-memory) for 7 days to avoid redundant API cal
 LlamaParse Premium provides the highest quality extraction for complex PDFs
 (recruitment documents often have complex layouts). The fallback chain ensures
 the app remains functional even if the LlamaParse API is unavailable.
+
+---
+
+## ADR-006 — Staging CSP Must Include Staging Backend URL (Feb 2026)
+
+**Status:** Active
+
+**Decision:**
+The `next.config.js` Content Security Policy `connect-src` directive on the `staging`
+branch explicitly includes `https://searchwizard-staging.up.railway.app` in addition
+to the production backend URL.
+
+**Reasoning:**
+The browser's CSP blocked all outbound fetch requests to the staging Railway backend,
+producing a "Failed to fetch" error identical to a CORS failure. Adding the staging
+backend URL to `connect-src` in `next.config.js` on the `staging` branch resolved it.
+
+**Important:** The production `next.config.js` (`main` branch) should NOT include the
+staging URL. This change lives on `staging` only.
+
+**Pattern for future environments:**
+Any new environment (e.g. QA, preview) must add its backend URL to `connect-src` in
+`next.config.js` on its respective branch, AND add its frontend URL to the
+`CORS_ALLOWED_ORIGINS` env var on its Railway backend service.
+
+---
+
+## ADR-007 — Upgrade Claude Model from claude-3-5-sonnet-20241022 to claude-sonnet-4-6 (Feb 2026)
+
+**Status:** Active
+
+**Decision:**
+All references to `claude-3-5-sonnet-20241022` in the backend have been updated to
+`claude-sonnet-4-6` on both `staging` and `main` branches.
+
+**Reasoning:**
+The Anthropic API returned a 404 `not_found_error` for `claude-3-5-sonnet-20241022`,
+indicating the model has been deprecated. Document generation was failing on staging
+(and would have failed on production) until this was corrected.
+
+**Files updated:**
+- `backend/agent_wrapper/anthropic.py`
+- `backend/api.py` (3 occurrences)
+
+**Note:** When Anthropic releases future model updates, both files must be updated
+together. Consider centralising the model name into a single constant or environment
+variable (`ANTHROPIC_MODEL`) to make future upgrades a one-line change.
