@@ -66,9 +66,10 @@ app.add_middleware(
         "https://searchwizard.ai",
         "https://www.searchwizard.ai",
         "https://search-wizard-smoky.vercel.app",
+        "https://search-wizard-git-staging-scott-texeiras-projects.vercel.app",
         "http://localhost:3000",
         "http://localhost:3001"  # Alternative local port
-    ],  # Allow production domain, Vercel preview, and local dev
+    ],  # Allow production domain, Vercel staging, and local dev
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
