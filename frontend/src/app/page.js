@@ -17,7 +17,7 @@ export default function Home() {
   const { user, loading: authLoading, isAuthenticated, isApproved } = useAuth();
   const [viewMode, setViewMode] = useState('grid');
   const [sortBy, setSortBy] = useState('Most Recent');
-  const [projects, setProjects] = useState([]);
+  const [projects, setMy Projects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isCreateProjectPopupOpen, setIsCreateProjectPopupOpen] = useState(false);
@@ -40,13 +40,13 @@ export default function Home() {
   useEffect(() => {
     // Only fetch projects if the user is authenticated and approved
     if (isAuthenticated && isApproved) {
-      const fetchProjects = async () => {
+      const fetchMy Projects = async () => {
   try {
     setLoading(true);
-    const projectData = await projectsApi.getProjects();
+    const projectData = await projectsApi.getMy Projects();
 
     // Transform database field names to match our component props
-    const formattedProjects = projectData.map(project => ({
+    const formattedMy Projects = projectData.map(project => ({
       id: project.id,
       title: project.title,
       client: project.client,
@@ -54,17 +54,17 @@ export default function Home() {
       artifactCount: project.artifact_count,
       backgroundColor: project.background_color || 'light-cream'
     }));
-    setProjects(formattedProjects);
+    setMy Projects(formattedMy Projects);
   } catch (err) {
 
     setError('Failed to load projects. Please check your connection and try again.');
-    setProjects([]);
+    setMy Projects([]);
   } finally {
     setLoading(false);
   }
 };
 
-      fetchProjects();
+      fetchMy Projects();
     } else if (!authLoading) {
       // Not authenticated and not loading auth state
       setLoading(false);
@@ -89,10 +89,10 @@ export default function Home() {
 
         if (success) {
 
-          setProjects(prevProjects => {
-            const updatedProjects = prevProjects.filter(project => project.id !== id);
+          setMy Projects(prevMy Projects => {
+            const updatedMy Projects = prevMy Projects.filter(project => project.id !== id);
 
-            return updatedProjects;
+            return updatedMy Projects;
           });
           alert('Project deleted successfully!');
         } else {
@@ -115,15 +115,15 @@ export default function Home() {
 
       if (updatedProject) {
 
-        setProjects(prevProjects => {
-          const newProjects = prevProjects.map(project => 
+        setMy Projects(prevMy Projects => {
+          const newMy Projects = prevMy Projects.map(project => 
             project.id === id ? { 
               ...project, 
               title: updatedProject.title 
             } : project
           );
 
-          return newProjects;
+          return newMy Projects;
         });
       } else {
 
@@ -144,15 +144,15 @@ export default function Home() {
 
       if (updatedProject) {
 
-        setProjects(prevProjects => {
-          const newProjects = prevProjects.map(project => 
+        setMy Projects(prevMy Projects => {
+          const newMy Projects = prevMy Projects.map(project => 
             project.id === id ? { 
               ...project, 
               client: updatedProject.client 
             } : project
           );
 
-          return newProjects;
+          return newMy Projects;
         });
       } else {
 
@@ -177,7 +177,7 @@ export default function Home() {
           // Authenticated user view
           <>
             <div className="mb-2">
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-dark-text">Projects</h1>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-dark-text">My Projects</h1>
             </div>
 
             <div className="flex items-center justify-between mb-6">
