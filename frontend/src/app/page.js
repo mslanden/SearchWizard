@@ -17,7 +17,7 @@ export default function Home() {
   const { user, loading: authLoading, isAuthenticated, isApproved } = useAuth();
   const [viewMode, setViewMode] = useState('grid');
   const [sortBy, setSortBy] = useState('Most Recent');
-  const [projects, setMy Projects] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isCreateProjectPopupOpen, setIsCreateProjectPopupOpen] = useState(false);
@@ -40,13 +40,13 @@ export default function Home() {
   useEffect(() => {
     // Only fetch projects if the user is authenticated and approved
     if (isAuthenticated && isApproved) {
-      const fetchMy Projects = async () => {
+      const fetchProjects = async () => {
   try {
     setLoading(true);
-    const projectData = await projectsApi.getMy Projects();
+    const projectData = await projectsApi.getProjects();
 
     // Transform database field names to match our component props
-    const formattedMy Projects = projectData.map(project => ({
+    const formattedProjects = projectData.map(project => ({
       id: project.id,
       title: project.title,
       client: project.client,
@@ -54,17 +54,17 @@ export default function Home() {
       artifactCount: project.artifact_count,
       backgroundColor: project.background_color || 'light-cream'
     }));
-    setMy Projects(formattedMy Projects);
+    setProjects(formattedProjects);
   } catch (err) {
 
     setError('Failed to load projects. Please check your connection and try again.');
-    setMy Projects([]);
+    setProjects([]);
   } finally {
     setLoading(false);
   }
 };
 
-      fetchMy Projects();
+      fetchProjects();
     } else if (!authLoading) {
       // Not authenticated and not loading auth state
       setLoading(false);
@@ -89,10 +89,10 @@ export default function Home() {
 
         if (success) {
 
-          setMy Projects(prevMy Projects => {
-            const updatedMy Projects = prevMy Projects.filter(project => project.id !== id);
+          setProjects(prevProjects => {
+            const updatedProjects = prevProjects.filter(project => project.id !== id);
 
-            return updatedMy Projects;
+            return updatedProjects;
           });
           alert('Project deleted successfully!');
         } else {
@@ -115,15 +115,15 @@ export default function Home() {
 
       if (updatedProject) {
 
-        setMy Projects(prevMy Projects => {
-          const newMy Projects = prevMy Projects.map(project => 
+        setProjects(prevProjects => {
+          const newProjects = prevProjects.map(project => 
             project.id === id ? { 
               ...project, 
               title: updatedProject.title 
             } : project
           );
 
-          return newMy Projects;
+          return newProjects;
         });
       } else {
 
@@ -144,15 +144,15 @@ export default function Home() {
 
       if (updatedProject) {
 
-        setMy Projects(prevMy Projects => {
-          const newMy Projects = prevMy Projects.map(project => 
+        setProjects(prevProjects => {
+          const newProjects = prevProjects.map(project => 
             project.id === id ? { 
               ...project, 
               client: updatedProject.client 
             } : project
           );
 
-          return newMy Projects;
+          return newProjects;
         });
       } else {
 
