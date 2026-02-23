@@ -60,16 +60,23 @@ async def health_check():
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Add CORS middleware
+# CORS_ALLOWED_ORIGINS env var can be a comma-separated list of additional origins.
+# Set this in Railway per environment to avoid hardcoding environment-specific URLs.
+_base_origins = [
+    "https://searchwizard.ai",
+    "https://www.searchwizard.ai",
+    "https://search-wizard-smoky.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:3001",
+]
+_extra_origins = [
+    o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()
+]
+_allowed_origins = _base_origins + _extra_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://searchwizard.ai",
-        "https://www.searchwizard.ai",
-        "https://search-wizard-smoky.vercel.app",
-        "https://search-wizard-git-staging-scott-texeiras-projects.vercel.app",
-        "http://localhost:3000",
-        "http://localhost:3001"  # Alternative local port
-    ],  # Allow production domain, Vercel staging, and local dev
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
