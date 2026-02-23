@@ -1,0 +1,221 @@
+# SearchWizard — Project Brain
+
+> Central reference document. Keep this up to date. Every AI session and every
+> human developer should read this before making changes.
+
+---
+
+## Goal
+
+Build an AI-powered recruitment document generation platform for **Agentica AI**
+that allows recruiters to:
+- Organise recruitment engagements as **Projects**
+- Upload context documents (**Artifacts**) about the company and role
+- Add **Candidates** and **Interviewers** with profiles and supporting documents
+- Generate polished, structured recruitment documents (job specs, candidate reports,
+  company overviews, analyst reports) using an AI agent pipeline
+- View, download, and manage generated **Outputs** within each project
+
+---
+
+## Non-Goals
+
+- Not a general-purpose document editor
+- Not a public consumer app — invite-only, admin-approval gated
+- Not a multi-tenant SaaS (single organisation: Agentica AI)
+- No mobile-native app (web only)
+
+---
+
+## Current Architecture
+
+### Major Components
+
+```
+User Browser
+    │
+    ▼
+Next.js Frontend (Vercel)
+    │  App Router pages + React components
+    │  Supabase JS client (auth + DB + storage)
+    │  API routes proxy → Railway backend
+    │
+    ▼
+FastAPI Backend (Railway)
+    │  Document generation pipeline
+    │  File parsing pipeline
+    │  Knowledge base injection
+    │
+    ├── StructureAgent  →  analyzes golden examples → JSON template
+    ├── WriterAgent     →  JSON template + KB + artifacts → HTML document
+    ├── ImageAnalyzer   →  extracts images/positions from PDFs
+    ├── DocumentParser  →  LlamaParse premium → fast → PyMuPDF → fallback
+    ├── CacheService    →  Redis (optional) / in-memory fallback
+    └── AgentWrapper    →  routes to Anthropic / OpenAI / Gemini
+    │
+    ▼
+Supabase
+    │  Postgres: projects, artifacts, candidates, interviewers,
+    │            project_outputs, user_roles
+    │  Auth: Supabase Auth + admin-approval RPC procedures
+    │  Storage buckets: company-artifacts, role-artifacts,
+    │                   candidate-artifacts, process-artifacts,
+    │                   project-outputs, golden-examples
+```
+
+### Data Flow — Document Generation
+
+1. User selects a Project and clicks **Generate Document**
+2. Frontend fetches project artifacts from Supabase storage
+3. Frontend calls backend `/api/generate-document` with:
+   `{ template_id, project_id, user_id, user_requirements }`
+4. **StructureAgent** reads golden example documents → extracts a JSON structure
+   (sections, tone, formatting rules, document type)
+5. **WriterAgent** combines structure + knowledge base files + project artifacts →
+   calls Claude 3.5 Sonnet → returns full styled HTML document
+6. HTML is saved to Supabase `project-outputs` storage bucket
+7. Output appears in the project's Outputs section; viewed inline via `HtmlDocumentViewer`
+
+### Frontend Route Map
+
+| Route | Purpose |
+|-------|---------|
+| `/` | Home — project list (grid/list view, sort, create) |
+| `/projects/[id]` | Project detail — artifacts, people, outputs, generate |
+| `/projects/new_blank` | Create blank project |
+| `/login` / `/register` | Auth |
+| `/pending-approval` | Waiting for admin approval |
+| `/admin` | Admin dashboard — approve/deny users, stats |
+| `/admin/users` / `/admin/activity` | User management, activity log |
+| `/profile` / `/settings` | User profile, dark mode toggle |
+
+---
+
+## Key Constraints
+
+| Constraint | Detail |
+|-----------|--------|
+| Hardcoded backend URL | `https://searchwizard-production.up.railway.app` appears in several frontend files in addition to the env var. Use `NEXT_PUBLIC_BACKEND_URL` env var where possible. |
+| `max_tokens=4096` | WriterAgent is capped at 4096 output tokens — long documents may be truncated. Increase if generation is cutting off. |
+| Shared Supabase (staging + production) | Both environments currently share one Supabase project. See `docs/DECISIONS.md` — must be separated before public launch. |
+| Admin approval required | `adminApprovalSystem: true` in `features.js`. New users cannot access the app until an admin approves them. Requires `user_roles` table and two Supabase stored procedures: `get_user_status_for_auth` and `check_is_admin`. |
+| LLM provider priority | Anthropic → OpenAI → Gemini, determined by which API key env vars are present. Anthropic must always be configured. |
+| Mixed JS/TS codebase | Frontend has a mix of `.js`, `.jsx`, `.ts`, `.tsx` files. New files should use TypeScript. |
+
+---
+
+## Current Status
+
+### Implemented and Working
+- Core document generation pipeline (StructureAgent → WriterAgent)
+- Multi-provider LLM support (Anthropic primary, OpenAI + Gemini fallbacks)
+- LlamaParse document parsing (premium and fast modes) with Redis caching
+- Project management (create, edit, delete projects)
+- Artifact upload (file, URL, or pasted text) for company and role context
+- Candidate and Interviewer profiles with supporting artifacts
+- Golden Examples (user-uploaded example documents that guide generation style)
+- Admin approval system (pending users, approve/deny, role management)
+- Dark mode
+- Staging environment (Railway + Vercel) — set up Feb 2026
+
+### Known Technical Debt
+- Multiple overlapping artifact upload popup components exist
+  (`UnifiedArtifactUploadPopup`, `EnhancedArtifactUploadPopup`, `ArtifactUploadPopup`,
+  `ProcessArtifactUploadPopup`) — consolidation needed
+- `kb_support.py` and `knowledge_helper.py` serve near-identical purposes — deduplicate
+- `/backend/tools/mcp.py` is an empty placeholder
+- Knowledge base files (`company-overview.txt`, `product-specs.txt`) are template
+  placeholders — only `info-agentica.md` has real content
+- One open draft PR: Vercel auto-generated React Server Components CVE security patch
+  — review and merge or close
+
+### What's Next (Priority Order)
+1. ✅ Staging environment setup (completed Feb 2026)
+2. Review and act on the open CVE security patch PR
+3. Make and test significant UI/feature changes on `staging` before pushing to `main`
+4. Separate Supabase projects (staging vs production) — **required before public launch**
+5. Increase `max_tokens` beyond 4096 if document truncation is observed
+6. Consolidate duplicate artifact upload popup components
+7. Populate knowledge base files with real Agentica AI content
+
+---
+
+## How to Run Locally
+
+### Prerequisites
+- Python 3.11+
+- Node.js 18+
+- A `.env` file in `/backend` (copy from `.env.example`)
+- A `.env.local` file in `/frontend` with Supabase credentials
+
+### Backend
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn api:app --reload --port 8000
+```
+Backend runs at `http://localhost:8000`
+
+### Frontend
+```bash
+cd frontend
+npm install
+# Create .env.local with:
+# NEXT_PUBLIC_SUPABASE_URL=...
+# NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY=...
+# NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+npm run dev
+```
+Frontend runs at `http://localhost:3000`
+
+### Required Environment Variables
+
+**Backend (`/backend/.env`):**
+```
+ANTHROPIC_API_KEY=
+OPENAI_API_KEY=
+GEMINI_API_KEY=
+LLAMAPARSE_API_KEY=
+ENABLE_LLAMAPARSE=true
+LLAMAPARSE_PRICING_TIER=premium
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY=
+REDIS_URL=redis://localhost:6379   # optional
+PORT=8000
+```
+
+**Frontend (`/frontend/.env.local`):**
+```
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY=
+NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+```
+
+---
+
+## Terminology / Definitions
+
+| Term | Definition |
+|------|-----------|
+| **Project** | A recruitment engagement. Has a title, client, date, description, and contains Artifacts, People, and Outputs. |
+| **Artifact** | A context document attached to a Project, Candidate, or Interviewer. Can be a file upload, a URL, or pasted text. Categorised as `company` or `role`. |
+| **Golden Example** | A user-uploaded example document that the StructureAgent analyzes to understand the desired structure, tone, and formatting of the output. |
+| **Knowledge Base (KB)** | Static files in `/backend/knowledge_base/` injected into every generation prompt. Contains Agentica AI company info and product specs. |
+| **StructureAgent** | Backend AI agent that reads golden examples and extracts a JSON document template (sections, tone, formatting rules). |
+| **WriterAgent** | Backend AI agent that takes the JSON template + KB content + project artifacts and generates a complete styled HTML document. |
+| **Output** | A generated HTML document produced from a Project. Stored in Supabase `project-outputs` bucket. Viewable inline via `HtmlDocumentViewer`. |
+| **AgentWrapper** | Backend abstraction layer that routes LLM calls to Anthropic, OpenAI, or Gemini based on available API keys. |
+| **Admin Approval** | New user accounts require explicit admin approval before gaining app access. Controlled by `adminApprovalSystem` feature flag. |
+
+---
+
+## Assumptions
+
+| # | Assumption | Date | Status |
+|---|-----------|------|--------|
+| 1 | Anthropic API key is always present and is the primary LLM provider | Feb 2026 | Active |
+| 2 | LlamaParse is always enabled (`ENABLE_LLAMAPARSE=true`) | Feb 2026 | Active |
+| 3 | Redis is optional — in-memory cache fallback is acceptable for now | Feb 2026 | Active |
+| 4 | Admin approval system is always on — no plan to disable it | Feb 2026 | Active |
+| 5 | All current users are internal Agentica AI team members; no real client data yet | Feb 2026 | Active — reassess at launch |
+| 6 | Staging and production share one Supabase project (acceptable pre-launch only) | Feb 2026 | Active — see DECISIONS.md |
