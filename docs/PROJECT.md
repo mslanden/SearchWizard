@@ -97,6 +97,8 @@ Supabase
 |-----------|--------|
 | Hardcoded backend URL | `https://searchwizard-production.up.railway.app` appears in several frontend files in addition to the env var. Use `NEXT_PUBLIC_BACKEND_URL` env var where possible. |
 | `max_tokens=4096` | WriterAgent is capped at 4096 output tokens — long documents may be truncated. Increase if generation is cutting off. |
+| CSP per branch | `next.config.js` `connect-src` must include the backend URL for each environment. Staging branch includes staging Railway URL; main does not. |
+| Claude model | `claude-sonnet-4-6` (upgraded from deprecated `claude-3-5-sonnet-20241022` Feb 2026). Defined in `backend/agent_wrapper/anthropic.py` and `backend/api.py`. |
 | Shared Supabase (staging + production) | Both environments currently share one Supabase project. See `docs/DECISIONS.md` — must be separated before public launch. |
 | Admin approval required | `adminApprovalSystem: true` in `features.js`. New users cannot access the app until an admin approves them. Requires `user_roles` table and two Supabase stored procedures: `get_user_status_for_auth` and `check_is_admin`. |
 | LLM provider priority | Anthropic → OpenAI → Gemini, determined by which API key env vars are present. Anthropic must always be configured. |
