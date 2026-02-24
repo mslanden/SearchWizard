@@ -6,6 +6,15 @@ import { artifactApi } from '../../lib/api';
 import StructureViewer from '../StructureViewer';
 import { useAuth } from '../../contexts/AuthContext';
 
+const EXAMPLE_TYPE_LABELS = {
+  role_specification: 'Role Specification',
+  company_briefing: 'Company Briefing',
+  scorecard: 'Assessment Scorecard',
+  confidential_report: 'Confidential Report',
+  interview_guide: 'Interview Guide',
+  reference_report: 'Reference Report',
+};
+
 export default function GoldenExamplesPopup({ onClose }) {
   const popupRef = useRef(null);
   const { user } = useAuth();
@@ -253,6 +262,7 @@ export default function GoldenExamplesPopup({ onClose }) {
         formData.append('file', firstFile);
         formData.append('name', uploadData.name);
         formData.append('user_id', userId);
+        formData.append('document_type', uploadData.exampleType);
 
         let backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://searchwizard-production.up.railway.app';
         
@@ -337,7 +347,6 @@ export default function GoldenExamplesPopup({ onClose }) {
         { id: 'confidential_report', name: 'Confidential Report' },
         { id: 'interview_guide', name: 'Interview Guide' },
         { id: 'reference_report', name: 'Reference Report' },
-        { id: 'other', name: 'Other' }
       ]);
 
       // Fetch templates using V2 API only
@@ -395,7 +404,7 @@ export default function GoldenExamplesPopup({ onClose }) {
           return {
             id: template.id,
             name: template.name,
-            type: template.document_type || 'Document',
+            type: EXAMPLE_TYPE_LABELS[template.document_type] || template.document_type || 'Document',
             dateAdded: new Date(template.date_added).toLocaleDateString(),
             url: cleanUrl,
             description: template.description || '',
