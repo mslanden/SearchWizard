@@ -145,7 +145,8 @@ async def analyze_structure(request: dict = Body(...)):
 async def create_template(
     file: UploadFile = File(...),
     name: str = Form(...),
-    user_id: str = Form(...)
+    user_id: str = Form(...),
+    document_type: str = Form(None)
 ):
     """Create a new template using V2 approach with Claude Vision analysis"""
     try:
@@ -300,14 +301,15 @@ Return ONLY the template prompt text that will be used for document generation."
             print(f"File upload failed: {str(e)}")
             original_file_url = None
         
-        # Determine document type
-        document_type = "document"
-        if "resume" in name.lower() or "cv" in name.lower():
-            document_type = "resume"
-        elif "cover" in name.lower() or "letter" in name.lower():
-            document_type = "cover_letter"
-        elif "job" in name.lower() or "role" in name.lower():
-            document_type = "job_description"
+        # Determine document type (use explicitly provided type, else guess from name)
+        if not document_type:
+            document_type = "document"
+            if "resume" in name.lower() or "cv" in name.lower():
+                document_type = "resume"
+            elif "cover" in name.lower() or "letter" in name.lower():
+                document_type = "cover_letter"
+            elif "job" in name.lower() or "role" in name.lower():
+                document_type = "job_description"
         
         # Save template to database
         template_data = {

@@ -263,6 +263,7 @@ export default function GoldenExamplesPopup({ onClose }) {
         formData.append('file', firstFile);
         formData.append('name', uploadData.name);
         formData.append('user_id', userId);
+        formData.append('document_type', uploadData.exampleType);
 
         let backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://searchwizard-production.up.railway.app';
         
