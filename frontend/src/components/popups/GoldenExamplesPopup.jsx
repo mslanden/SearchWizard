@@ -8,12 +8,11 @@ import { useAuth } from '../../contexts/AuthContext';
 
 const EXAMPLE_TYPE_LABELS = {
   role_specification: 'Role Specification',
-  resume: 'Resume',
-  cover_letter: 'Cover Letter',
-  job_description: 'Job Description',
-  interview_report: 'Interview Report',
-  company_profile: 'Company Profile',
-  other: 'Other',
+  company_briefing: 'Company Briefing',
+  scorecard: 'Assessment Scorecard',
+  confidential_report: 'Confidential Report',
+  interview_guide: 'Interview Guide',
+  reference_report: 'Reference Report',
 };
 
 export default function GoldenExamplesPopup({ onClose }) {
@@ -343,12 +342,11 @@ export default function GoldenExamplesPopup({ onClose }) {
       // Set predefined example types for V2 template system
       setExampleTypes([
         { id: 'role_specification', name: 'Role Specification' },
-        { id: 'resume', name: 'Resume' },
-        { id: 'cover_letter', name: 'Cover Letter' },
-        { id: 'job_description', name: 'Job Description' },
-        { id: 'interview_report', name: 'Interview Report' },
-        { id: 'company_profile', name: 'Company Profile' },
-        { id: 'other', name: 'Other' }
+        { id: 'company_briefing', name: 'Company Briefing' },
+        { id: 'scorecard', name: 'Assessment Scorecard' },
+        { id: 'confidential_report', name: 'Confidential Report' },
+        { id: 'interview_guide', name: 'Interview Guide' },
+        { id: 'reference_report', name: 'Reference Report' },
       ]);
 
       // Fetch templates using V2 API only
