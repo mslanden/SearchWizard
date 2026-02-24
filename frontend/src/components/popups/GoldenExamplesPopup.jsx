@@ -6,6 +6,16 @@ import { artifactApi } from '../../lib/api';
 import StructureViewer from '../StructureViewer';
 import { useAuth } from '../../contexts/AuthContext';
 
+const EXAMPLE_TYPE_LABELS = {
+  role_specification: 'Role Specification',
+  resume: 'Resume',
+  cover_letter: 'Cover Letter',
+  job_description: 'Job Description',
+  interview_report: 'Interview Report',
+  company_profile: 'Company Profile',
+  other: 'Other',
+};
+
 export default function GoldenExamplesPopup({ onClose }) {
   const popupRef = useRef(null);
   const { user } = useAuth();
@@ -395,7 +405,7 @@ export default function GoldenExamplesPopup({ onClose }) {
           return {
             id: template.id,
             name: template.name,
-            type: template.document_type || 'Document',
+            type: EXAMPLE_TYPE_LABELS[template.document_type] || template.document_type || 'Document',
             dateAdded: new Date(template.date_added).toLocaleDateString(),
             url: cleanUrl,
             description: template.description || '',
