@@ -173,6 +173,7 @@ Supabase
 | 18 | Interviewer artifact upload fails with "new row violates row-level security policy" | Open | RLS policy on `process_artifacts` table is blocking inserts; likely missing or misconfigured INSERT policy for authenticated users |
 | 19 | Admin Artifact Types page: section headings use short labels | Open — UI polish | `/admin/artifact-types` shows "Company Types", "Role Types", etc. Should read "Company Artifact Types", "Role Artifact Types", "Candidate Artifact Types", "Interviewer Artifact Types", "Golden Example Types" |
 | 20 | Company/Role artifact TYPE reverts to "application/pdf" on page refresh | Open | Optimistic update shows correct label (fix #15 working); on refresh `getArtifacts` returns MIME type — either `document_type` is NULL in DB for pre-fix artifacts or the page renders `fileType` instead of `type` when loading from API |
+| 21 | TYPE column rendered as a highlighted badge/bubble instead of plain text | Open — UI polish | Company and Role artifact tables render the TYPE value inside a styled chip/badge element; all other table columns are plain text. Standardise to plain text across all artifact tables (company, role, candidate, interviewer) for visual consistency |
 
 ---
 
