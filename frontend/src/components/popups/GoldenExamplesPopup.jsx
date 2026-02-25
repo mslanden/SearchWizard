@@ -3,17 +3,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { XMarkIcon, DocumentIcon, ArrowUpTrayIcon, PlusIcon, TrashIcon, DocumentTextIcon, CogIcon, EyeIcon } from '@heroicons/react/24/outline';
 import { artifactApi } from '../../lib/api';
+import { storageApi } from '../../lib/api/storageApi';
 import StructureViewer from '../StructureViewer';
 import { useAuth } from '../../contexts/AuthContext';
 
-const EXAMPLE_TYPE_LABELS = {
-  role_specification: 'Role Specification',
-  company_briefing: 'Company Briefing',
-  scorecard: 'Assessment Scorecard',
-  confidential_report: 'Confidential Report',
-  interview_guide: 'Interview Guide',
-  reference_report: 'Reference Report',
-};
 
 export default function GoldenExamplesPopup({ onClose }) {
   const popupRef = useRef(null);
@@ -339,15 +332,9 @@ export default function GoldenExamplesPopup({ onClose }) {
       setLoading(true);
       setError('');
 
-      // Set predefined example types for V2 template system
-      setExampleTypes([
-        { id: 'role_specification', name: 'Role Specification' },
-        { id: 'company_briefing', name: 'Company Briefing' },
-        { id: 'scorecard', name: 'Assessment Scorecard' },
-        { id: 'confidential_report', name: 'Confidential Report' },
-        { id: 'interview_guide', name: 'Interview Guide' },
-        { id: 'reference_report', name: 'Reference Report' },
-      ]);
+      // Load example types from DB (falls back to config.js if DB unavailable)
+      const dbTypes = await storageApi.getArtifactTypes('golden');
+      setExampleTypes(dbTypes);
 
       // Fetch templates using V2 API only
       const userId = user?.id;
@@ -389,6 +376,9 @@ export default function GoldenExamplesPopup({ onClose }) {
       console.log('Fetched templates:', templates);
 
       if (templates && Array.isArray(templates)) {
+        // Build a map from type slug to human-readable label
+        const typeMap = Object.fromEntries(dbTypes.map(t => [t.id, t.name]));
+
         const processedTemplates = templates.map(template => {
           // All templates are V2 now
           // Clean up the original file URL by removing trailing characters
@@ -400,11 +390,11 @@ export default function GoldenExamplesPopup({ onClose }) {
           if (cleanUrl.includes('/public/')) {
             cleanUrl = cleanUrl.replace('/public/', '/sign/');
           }
-          
+
           return {
             id: template.id,
             name: template.name,
-            type: EXAMPLE_TYPE_LABELS[template.document_type] || template.document_type || 'Document',
+            type: typeMap[template.document_type] || template.document_type || 'Document',
             dateAdded: new Date(template.date_added).toLocaleDateString(),
             url: cleanUrl,
             description: template.description || '',

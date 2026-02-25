@@ -116,7 +116,13 @@ export const interviewerApi = {
         throw error;
       }
 
-      return data.map(transformDatabaseObject);
+      const types = await storageApi.getArtifactTypes('process');
+      const typeMap = Object.fromEntries(types.map(t => [t.id, t.name]));
+
+      return data.map(artifact => ({
+        ...transformDatabaseObject(artifact),
+        type: typeMap[artifact.artifact_type] || artifact.artifact_type
+      }));
     } catch (error) {
       handleApiError(error, 'get interviewer artifacts');
     }

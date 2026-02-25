@@ -167,7 +167,9 @@ export const storageApi = {
         .from('artifact_types')
         .select('*')
         .eq('category', category)
-        .order('name');
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+        .order('name', { ascending: true });
 
       if (error && error.code !== 'PGRST116') { // PGRST116 = table not found
         throw error;

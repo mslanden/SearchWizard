@@ -2,15 +2,16 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { 
-  ArrowLeftIcon, 
-  UsersIcon, 
+import {
+  ArrowLeftIcon,
+  UsersIcon,
   ClockIcon,
   CheckCircleIcon,
   XCircleIcon,
   UserPlusIcon,
   ShieldCheckIcon,
-  EyeIcon
+  EyeIcon,
+  TagIcon
 } from '@heroicons/react/24/outline';
 import Header from '../../components/Header';
 import AdminProtectedRoute from '../../components/AdminProtectedRoute';
@@ -263,12 +264,19 @@ function AdminDashboard() {
               <UsersIcon className="w-4 h-4 mr-2" />
               Manage Users
             </Link>
-            <Link 
+            <Link
               href="/admin/activity"
               className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
             >
               <EyeIcon className="w-4 h-4 mr-2" />
               View Activity Log
+            </Link>
+            <Link
+              href="/admin/artifact-types"
+              className="inline-flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+            >
+              <TagIcon className="w-4 h-4 mr-2" />
+              Manage Artifact Types
             </Link>
           </div>
         </div>
