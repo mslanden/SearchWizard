@@ -136,8 +136,6 @@ Supabase
   placeholders — only `info-agentica.md` has real content
 - One open draft PR: Vercel auto-generated React Server Components CVE security patch
   — review and merge or close
-- Candidate/interviewer photo does not appear immediately after add (race condition — photo
-  URL is not included in the optimistic state update, appears after page refresh) — Bug #8/#9
 - **TypeScript + JS module import rule:** When importing from `.js` API files into `.tsx`
   components, always cast the imported module or method to an explicit interface type.
   With `noImplicitAny: true` in tsconfig, untyped JS imports can produce implicit `any`
@@ -149,7 +147,7 @@ Supabase
 2. ✅ Artifact type system — DB-driven dropdowns for all artifact categories (Feb 2026)
 3. Review and act on the open CVE security patch PR
 4. Make and test significant UI/feature changes on `staging` before pushing to `main`
-5. Fix remaining open bugs on staging (see bug log below)
+5. Fix Bug #22 (Generate New Document dropdown lists file names instead of types) — requires scoping before fixing
 6. Separate Supabase projects (staging vs production) — **required before public launch**
 7. Increase `max_tokens` beyond 4096 if document truncation is observed
 8. Consolidate duplicate artifact upload popup components

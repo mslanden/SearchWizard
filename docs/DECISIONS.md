@@ -61,10 +61,12 @@ Use a branch-based staging environment:
 **Status:** Active
 
 **Decision:**
-The backend uses `claude-3-5-sonnet-20241022` as the primary LLM for document
-generation, with OpenAI and Gemini as fallbacks determined by env var presence.
+The backend uses `claude-sonnet-4-6` as the primary LLM for document generation
+(upgraded from deprecated `claude-3-5-sonnet-20241022` — see ADR-007), with OpenAI
+and Gemini as fallbacks determined by env var presence.
 
-**Current cap:** `max_tokens=4096` in WriterAgent.
+**Current cap:** `max_tokens=4096` in `agent_wrapper/anthropic.py`; individual API
+endpoints in `api.py` use lower caps (2000–4000) depending on the call type.
 
 **Known limitation:**
 4096 tokens may truncate long documents. If generation is observed to be cut off,
