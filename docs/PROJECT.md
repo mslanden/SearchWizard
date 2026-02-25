@@ -56,10 +56,12 @@ FastAPI Backend (Railway)
     ▼
 Supabase
     │  Postgres: projects, artifacts, candidates, interviewers,
-    │            project_outputs, user_roles
+    │            candidate_artifacts, process_artifacts,
+    │            project_outputs, user_roles, artifact_types
     │  Auth: Supabase Auth + admin-approval RPC procedures
     │  Storage buckets: company-artifacts, role-artifacts,
     │                   candidate-artifacts, process-artifacts,
+    │                   candidate-photos, interviewer-photos,
     │                   project-outputs, golden-examples
 ```
 
@@ -85,8 +87,9 @@ Supabase
 | `/projects/new_blank` | Create blank project |
 | `/login` / `/register` | Auth |
 | `/pending-approval` | Waiting for admin approval |
-| `/admin` | Admin dashboard — approve/deny users, stats |
+| `/admin` | Admin dashboard — approve/deny users, stats, manage artifact types |
 | `/admin/users` / `/admin/activity` | User management, activity log |
+| `/admin/artifact-types` | Admin UI to manage artifact type options per category |
 | `/profile` / `/settings` | User profile, dark mode toggle |
 
 ---
@@ -113,9 +116,11 @@ Supabase
 - Multi-provider LLM support (Anthropic primary, OpenAI + Gemini fallbacks)
 - LlamaParse document parsing (premium and fast modes) with Redis caching
 - Project management (create, edit, delete projects)
-- Artifact upload (file, URL, or pasted text) for company and role context
-- Candidate and Interviewer profiles with supporting artifacts
-- Golden Examples (user-uploaded example documents that guide generation style)
+- Artifact upload (file, URL, or pasted text) for company, role, candidate, and interviewer context
+- Artifact type system — DB-driven dropdown menus per category (company, role, candidate, process, golden), with `config.js` fallback when DB is unreachable (Feb 2026)
+- Admin UI to manage artifact types at `/admin/artifact-types` — add, edit, delete, reorder (Feb 2026)
+- Candidate and Interviewer profiles with photos and supporting artifacts
+- Golden Examples (user-uploaded example documents that guide generation style), types now DB-driven
 - Admin approval system (pending users, approve/deny, role management)
 - Dark mode
 - Staging environment (Railway + Vercel) — set up Feb 2026
@@ -123,22 +128,42 @@ Supabase
 ### Known Technical Debt
 - Multiple overlapping artifact upload popup components exist
   (`UnifiedArtifactUploadPopup`, `EnhancedArtifactUploadPopup`, `ArtifactUploadPopup`,
-  `ProcessArtifactUploadPopup`) — consolidation needed
+  `CandidateArtifactUploadPopup`, `ProcessArtifactUploadPopup`) — consolidation needed.
+  `UnifiedArtifactUploadPopup` is the canonical component for company/role uploads.
 - `kb_support.py` and `knowledge_helper.py` serve near-identical purposes — deduplicate
 - `/backend/tools/mcp.py` is an empty placeholder
 - Knowledge base files (`company-overview.txt`, `product-specs.txt`) are template
   placeholders — only `info-agentica.md` has real content
 - One open draft PR: Vercel auto-generated React Server Components CVE security patch
   — review and merge or close
+- Candidate/interviewer photo does not appear immediately after add (race condition — photo
+  URL is not included in the optimistic state update, appears after page refresh) — Bug #8/#9
+- **TypeScript + JS module import rule:** When importing from `.js` API files into `.tsx`
+  components, always cast the imported module or method to an explicit interface type.
+  With `noImplicitAny: true` in tsconfig, untyped JS imports can produce implicit `any`
+  that **fails the Next.js build on Vercel/Railway** without a clear error in the console.
+  Pattern: `(module as { method: (arg: Type) => Promise<ReturnType> }).method(arg)`
 
 ### What's Next (Priority Order)
 1. ✅ Staging environment setup (completed Feb 2026)
-2. Review and act on the open CVE security patch PR
-3. Make and test significant UI/feature changes on `staging` before pushing to `main`
-4. Separate Supabase projects (staging vs production) — **required before public launch**
-5. Increase `max_tokens` beyond 4096 if document truncation is observed
-6. Consolidate duplicate artifact upload popup components
-7. Populate knowledge base files with real Agentica AI content
+2. ✅ Artifact type system — DB-driven dropdowns for all artifact categories (Feb 2026)
+3. Review and act on the open CVE security patch PR
+4. Make and test significant UI/feature changes on `staging` before pushing to `main`
+5. Fix remaining open bugs on staging (see bug log below)
+6. Separate Supabase projects (staging vs production) — **required before public launch**
+7. Increase `max_tokens` beyond 4096 if document truncation is observed
+8. Consolidate duplicate artifact upload popup components
+9. Populate knowledge base files with real Agentica AI content
+
+### Open Bug Log (Staging — Feb 2026)
+
+| # | Description | Status | Root Cause |
+|---|-------------|--------|-----------|
+| 5 | Project deletion fails | Fixed in `bc96062` | FK constraint — `deleteProject` now cascade-deletes all child records first |
+| 6/7 | Artifact Type dropdown missing from Company/Role upload forms | Fixed in `7afbaee` (deployed in `bc96062`) | TS build failure blocked prior deploy |
+| 8/9 | Candidate/Interviewer photo not shown immediately after add | Open | Race condition — optimistic state update excludes `photoUrl`; appears after refresh |
+| 10 | Candidate artifact upload fails (`input_type` column missing) | Fixed via SQL | `candidate_artifacts` table was missing `input_type` column |
+| 11 | Interviewer profile crashes (`process_artifacts` schema gap) | Fixed via SQL | `process_artifacts` missing multiple columns (`input_type`, `source_url`, etc.) |
 
 ---
 
@@ -200,8 +225,9 @@ NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
 | Term | Definition |
 |------|-----------|
 | **Project** | A recruitment engagement. Has a title, client, date, description, and contains Artifacts, People, and Outputs. |
-| **Artifact** | A context document attached to a Project, Candidate, or Interviewer. Can be a file upload, a URL, or pasted text. Categorised as `company` or `role`. |
-| **Golden Example** | A user-uploaded example document that the StructureAgent analyzes to understand the desired structure, tone, and formatting of the output. |
+| **Artifact** | A context document attached to a Project, Candidate, or Interviewer. Can be a file upload, a URL, or pasted text. Stored in `artifacts` (company/role), `candidate_artifacts`, or `process_artifacts`. Each has a specific `artifact_type` slug (e.g. `resume_cv`) drawn from the `artifact_types` table. |
+| **Artifact Type** | A user-visible label for an artifact (e.g. "Resume/CV", "Annual Report"). Stored in the `artifact_types` table, scoped by `category` (`company`, `role`, `candidate`, `process`, `golden`). Managed by admins at `/admin/artifact-types`. Config.js provides a fallback list if the DB is unreachable. |
+| **Golden Example** | A user-uploaded example document that the StructureAgent analyzes to understand the desired structure, tone, and formatting of the output. Types are now drawn from `artifact_types` where `category = 'golden'`. |
 | **Knowledge Base (KB)** | Static files in `/backend/knowledge_base/` injected into every generation prompt. Contains Agentica AI company info and product specs. |
 | **StructureAgent** | Backend AI agent that reads golden examples and extracts a JSON document template (sections, tone, formatting rules). |
 | **WriterAgent** | Backend AI agent that takes the JSON template + KB content + project artifacts and generates a complete styled HTML document. |
