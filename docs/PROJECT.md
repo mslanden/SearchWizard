@@ -171,6 +171,7 @@ Supabase
 | 16 | "No file selected" error shown on candidate/interviewer profile after successful artifact upload | Fixed in `519698b` | `handleArtifactUploaded` expected raw form data but popup passed the API result (no `.file`); guard always fired, error set, optimistic update skipped. Fixed: handler now treats argument as already-uploaded record |
 | 17 | DATE ADDED column blank after adding a candidate or interviewer artifact | Open | `createdAt` from the API result is not surfaced in the artifact table; current date should be captured at upload time and displayed |
 | 18 | Interviewer artifact upload fails with "new row violates row-level security policy" | Open | RLS policy on `process_artifacts` table is blocking inserts; likely missing or misconfigured INSERT policy for authenticated users |
+| 19 | Admin Artifact Types page: section headings use short labels | Open — UI polish | `/admin/artifact-types` shows "Company Types", "Role Types", etc. Should read "Company Artifact Types", "Role Artifact Types", "Candidate Artifact Types", "Interviewer Artifact Types", "Golden Example Types" |
 
 ---
 
