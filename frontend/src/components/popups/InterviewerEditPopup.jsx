@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
-import { XMarkIcon, UserCircleIcon, PencilIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, UserCircleIcon, DocumentIcon, LinkIcon, DocumentTextIcon, PlusIcon, PencilIcon } from '@heroicons/react/24/outline';
+import { artifactApi } from '../../lib/api';
+import EnhancedProcessArtifactUploadPopup from './EnhancedProcessArtifactUploadPopup';
 
 export default function InterviewerEditPopup({ interviewer, onClose, onSave, onDelete }) {
   const popupRef = useRef(null);
@@ -13,7 +15,11 @@ export default function InterviewerEditPopup({ interviewer, onClose, onSave, onD
   const [previewUrl, setPreviewUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [artifacts, setArtifacts] = useState([]);
+  const [isLoadingArtifacts, setIsLoadingArtifacts] = useState(false);
+  const [artifactTypes, setArtifactTypes] = useState([]);
   const [isEditProfile, setIsEditProfile] = useState(false);
+  const [showUploadPopup, setShowUploadPopup] = useState(false);
 
   useEffect(() => {
     if (interviewer) {
@@ -23,6 +29,8 @@ export default function InterviewerEditPopup({ interviewer, onClose, onSave, onD
       setEmail(interviewer.email || '');
       setPhone(interviewer.phone || '');
       setPreviewUrl(interviewer.photoUrl || '/images/default-pfp.webp');
+      loadArtifacts();
+      loadArtifactTypes();
     } else {
       setName('');
       setPosition('');
@@ -31,7 +39,39 @@ export default function InterviewerEditPopup({ interviewer, onClose, onSave, onD
       setPhone('');
       setPreviewUrl('/images/default-pfp.webp');
     }
-  }, [interviewer]);
+  }, [interviewer]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadArtifacts = async () => {
+    if (!interviewer || !interviewer.id) return;
+    try {
+      setIsLoadingArtifacts(true);
+      const fetchedArtifacts = await artifactApi.getInterviewerArtifacts(interviewer.id);
+      const formattedArtifacts = fetchedArtifacts.map(artifact => ({
+        id: artifact.id,
+        name: artifact.name,
+        description: artifact.description || '',
+        artifactType: artifact.artifact_type || artifact.artifactType || 'other',
+        dateAdded: artifact.dateAdded || artifact.date_added || artifact.created_at || new Date().toISOString(),
+        fileUrl: artifact.fileUrl || artifact.file_url || artifact.url || '',
+        fileType: artifact.fileType || artifact.file_type || '',
+        fileSize: artifact.fileSize || artifact.file_size || artifact.size || 0
+      }));
+      setArtifacts(formattedArtifacts);
+    } catch (err) {
+      setError('Failed to load artifacts');
+    } finally {
+      setIsLoadingArtifacts(false);
+    }
+  };
+
+  const loadArtifactTypes = async () => {
+    try {
+      const types = await artifactApi.getArtifactTypes('process');
+      setArtifactTypes(types);
+    } catch (err) {
+      // Failed to load artifact types - continue with empty array
+    }
+  };
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -65,6 +105,53 @@ export default function InterviewerEditPopup({ interviewer, onClose, onSave, onD
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleArtifactUploaded = (uploadedArtifact) => {
+    if (!uploadedArtifact) {
+      setError('Upload failed - no data returned');
+      return;
+    }
+
+    const formattedArtifact = {
+      id: uploadedArtifact.id,
+      name: uploadedArtifact.name,
+      description: uploadedArtifact.description || '',
+      artifactType: uploadedArtifact.artifactType || 'other',
+      dateAdded: uploadedArtifact.createdAt || new Date().toISOString(),
+      fileUrl: uploadedArtifact.fileUrl || '',
+      fileType: uploadedArtifact.fileType || '',
+      fileSize: uploadedArtifact.fileSize || 0
+    };
+
+    setArtifacts(prev => [formattedArtifact, ...prev]);
+    setError('');
+    setShowUploadPopup(false);
+  };
+
+  const handleChangeArtifactType = (artifactId, newType) => {
+    setArtifacts(artifacts.map(a =>
+      a.id === artifactId ? { ...a, artifactType: newType } : a
+    ));
+  };
+
+  const getArtifactIcon = (typeName) => {
+    switch (typeName?.toLowerCase()) {
+      case 'resume':
+        return <DocumentIcon className="w-5 h-5 text-gray-500" />;
+      case 'interview notes':
+        return <DocumentTextIcon className="w-5 h-5 text-gray-500" />;
+      case 'linkedin profile':
+        return <LinkIcon className="w-5 h-5 text-gray-500" />;
+      default:
+        return <DocumentIcon className="w-5 h-5 text-gray-500" />;
+    }
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return `${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')}/${date.getFullYear()}`;
   };
 
   return (
@@ -235,7 +322,76 @@ export default function InterviewerEditPopup({ interviewer, onClose, onSave, onD
                 </button>
               </div>
             </form>
-          ) : null}
+          ) : (
+            /* Artifacts Section — only shown in display mode, not during profile edit */
+            <div className="px-6 pb-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-medium text-gray-900">Interviewer Artifacts</h3>
+                <button
+                  className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1.5 rounded-md flex items-center text-sm"
+                  onClick={() => setShowUploadPopup(true)}
+                >
+                  <PlusIcon className="w-4 h-4 mr-1" />
+                  Add Artifact
+                </button>
+              </div>
+              <div className="bg-white rounded-lg overflow-hidden shadow-sm">
+                <table className="w-full">
+                  <thead className="text-xs text-gray-500 uppercase bg-[#F5F5F5]">
+                    <tr>
+                      <th className="py-2 px-4 text-left font-medium">Artifact</th>
+                      <th className="py-2 px-4 text-left font-medium">Type</th>
+                      <th className="py-2 px-4 text-left font-medium">Date Added</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {isLoadingArtifacts ? (
+                      <tr>
+                        <td colSpan="3" className="text-center py-4 text-gray-500">Loading artifacts...</td>
+                      </tr>
+                    ) : artifacts.length === 0 ? (
+                      <tr>
+                        <td colSpan="3" className="text-center py-4 text-gray-500">No artifacts added yet</td>
+                      </tr>
+                    ) : (
+                      artifacts.map(artifact => (
+                        <tr key={artifact.id} className="hover:bg-gray-50">
+                          <td className="py-2 px-4">
+                            <div className="flex items-center">
+                              {getArtifactIcon(artifactTypes.find(t => t.id === artifact.artifactType)?.name)}
+                              <span className="ml-2 text-sm text-gray-800">
+                                {artifact.name}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-2 px-4">
+                            <select
+                              value={artifact.artifactType}
+                              onChange={(e) => handleChangeArtifactType(artifact.id, e.target.value)}
+                              className="bg-white border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none"
+                              style={{
+                                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
+                                backgroundPosition: 'right 0.5rem center',
+                                backgroundSize: '1.5em 1.5em',
+                                backgroundRepeat: 'no-repeat'
+                              }}
+                            >
+                              {artifactTypes.map(type => (
+                                <option key={type.id} value={type.id}>{type.name}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="py-2 px-4 text-gray-600 text-sm">
+                            {formatDate(artifact.dateAdded)}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Footer */}
           <div className="flex justify-between items-center px-6 pb-6 mt-2">
@@ -260,6 +416,16 @@ export default function InterviewerEditPopup({ interviewer, onClose, onSave, onD
           </div>
         </div>
       </div>
+
+      {/* Artifact Upload Popup */}
+      {showUploadPopup && interviewer && (
+        <EnhancedProcessArtifactUploadPopup
+          interviewerId={interviewer.id}
+          interviewerName={interviewer.name}
+          onClose={() => setShowUploadPopup(false)}
+          onSuccess={handleArtifactUploaded}
+        />
+      )}
     </div>
   );
 }

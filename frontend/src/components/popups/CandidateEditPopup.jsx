@@ -2,6 +2,8 @@ import { useRef } from 'react';
 import useCandidateEdit from '../../hooks/useCandidateEdit';
 import CandidateProfileDisplay from '../candidate/CandidateProfileDisplay';
 import CandidateProfileForm from '../candidate/CandidateProfileForm';
+import CandidateArtifactsTable from '../candidate/CandidateArtifactsTable';
+import EnhancedCandidateArtifactUploadPopup from './EnhancedCandidateArtifactUploadPopup';
 
 export default function CandidateEditPopup({ candidate, onClose, onSave, onDelete }) {
   const popupRef = useRef(null);
@@ -14,12 +16,19 @@ export default function CandidateEditPopup({ candidate, onClose, onSave, onDelet
     phone, setPhone,
     previewUrl,
     isSubmitting,
-    error,
+    error, setError,
+    artifacts,
+    isLoadingArtifacts,
+    artifactTypes,
     isEditProfile, setIsEditProfile,
+    showUploadPopup, setShowUploadPopup,
 
     // Methods
     handlePhotoChange,
     handleProfileSubmit,
+    handleUploadArtifact,
+    handleArtifactUploaded,
+    handleChangeArtifactType,
   } = useCandidateEdit(candidate);
 
   const onSubmit = (e) => handleProfileSubmit(e, onSave);
@@ -70,6 +79,19 @@ export default function CandidateEditPopup({ candidate, onClose, onSave, onDelet
           </div>
         )}
 
+        {/* Artifacts Section — only shown in display mode, not during profile edit */}
+        {!isEditProfile && (
+          <div className="p-0 bg-[#F0F7FF]">
+            <CandidateArtifactsTable
+              artifacts={artifacts}
+              artifactTypes={artifactTypes}
+              isLoadingArtifacts={isLoadingArtifacts}
+              onUploadArtifact={handleUploadArtifact}
+              onChangeArtifactType={handleChangeArtifactType}
+            />
+          </div>
+        )}
+
         {/* Footer */}
         <div className="flex justify-between items-center px-6 pb-6 mt-2">
           {onDelete && (
@@ -92,6 +114,16 @@ export default function CandidateEditPopup({ candidate, onClose, onSave, onDelet
           </div>
         </div>
       </div>
+
+      {/* Artifact Upload Popup */}
+      {showUploadPopup && candidate && (
+        <EnhancedCandidateArtifactUploadPopup
+          candidateId={candidate.id}
+          candidateName={name}
+          onClose={() => setShowUploadPopup(false)}
+          onSuccess={handleArtifactUploaded}
+        />
+      )}
     </div>
   );
 }
