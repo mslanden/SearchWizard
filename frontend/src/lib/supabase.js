@@ -257,7 +257,7 @@ export const projectsApi = {
         throw new Error('User not authenticated');
       }
 
-      // First, verify the project exists
+      // First, verify the project exists and belongs to this user
       const { data: existingProject, error: fetchError } = await supabase
         .from('projects')
         .select('id')
@@ -273,7 +273,38 @@ export const projectsApi = {
         throw new Error('Project not found');
       }
 
-      // Execute the delete operation
+      // Cascade delete: remove all related records first to avoid FK constraint errors
+
+      // Get candidates and interviewers so we can delete their artifacts
+      const { data: candidates } = await supabase
+        .from('candidates')
+        .select('id')
+        .eq('project_id', id);
+
+      const { data: interviewers } = await supabase
+        .from('interviewers')
+        .select('id')
+        .eq('project_id', id);
+
+      // Delete candidate artifacts
+      if (candidates && candidates.length > 0) {
+        const candidateIds = candidates.map(c => c.id);
+        await supabase.from('candidate_artifacts').delete().in('candidate_id', candidateIds);
+      }
+
+      // Delete process artifacts
+      if (interviewers && interviewers.length > 0) {
+        const interviewerIds = interviewers.map(i => i.id);
+        await supabase.from('process_artifacts').delete().in('interviewer_id', interviewerIds);
+      }
+
+      // Delete top-level children
+      await supabase.from('artifacts').delete().eq('project_id', id);
+      await supabase.from('candidates').delete().eq('project_id', id);
+      await supabase.from('interviewers').delete().eq('project_id', id);
+      await supabase.from('project_outputs').delete().eq('project_id', id);
+
+      // Now delete the project itself
       const { error } = await supabase
         .from('projects')
         .delete()

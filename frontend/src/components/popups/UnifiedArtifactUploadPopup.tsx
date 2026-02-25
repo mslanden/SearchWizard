@@ -36,12 +36,16 @@ const UnifiedArtifactUploadPopup: React.FC<UnifiedArtifactUploadPopupProps> = ({
   const { handleError, handleSuccess } = useEnhancedErrorHandler();
 
   useEffect(() => {
-    storageApi.getArtifactTypes(type).then((types) => {
-      setArtifactTypes(types);
-      if (types.length > 0) {
-        setArtifactType(types[0].id);
-      }
-    }).catch(() => {});
+    type ArtifactTypeOption = { id: string; name: string };
+    (storageApi as { getArtifactTypes: (category: string) => Promise<ArtifactTypeOption[]> })
+      .getArtifactTypes(type)
+      .then((types) => {
+        setArtifactTypes(types);
+        if (types.length > 0) {
+          setArtifactType(types[0].id);
+        }
+      })
+      .catch(() => {});
   }, [type]);
 
   const defaultTitle = `Add ${type.charAt(0).toUpperCase() + type.slice(1)} Artifact`;
