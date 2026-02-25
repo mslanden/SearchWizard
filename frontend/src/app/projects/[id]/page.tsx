@@ -211,7 +211,8 @@ export default function ProjectDetail({ params }: PageProps) {
         description: artifactData.description,
         inputType: artifactData.inputType || 'file' as const,
         sourceUrl: artifactData.sourceUrl,  // URL input
-        textContent: artifactData.textContent  // Text input
+        textContent: artifactData.textContent,  // Text input
+        artifactType: artifactData.artifactType
       };
 
       // File is passed separately as required by API

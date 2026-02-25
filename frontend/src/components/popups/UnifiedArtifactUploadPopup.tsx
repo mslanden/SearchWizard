@@ -1,8 +1,9 @@
 import type React from 'react';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import BasePopup from '../common/BasePopup';
 import { useEnhancedErrorHandler } from '../../contexts/ToastContext';
 import { ArtifactUploadData } from '../../types/project';
+import { storageApi } from '../../lib/api/storageApi';
 
 export type ArtifactUploadType = 'company' | 'role' | 'process' | 'candidate';
 export type InputType = 'file' | 'url' | 'text';
@@ -28,9 +29,20 @@ const UnifiedArtifactUploadPopup: React.FC<UnifiedArtifactUploadPopupProps> = ({
   const [textContent, setTextContent] = useState('');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [artifactType, setArtifactType] = useState('');
+  const [artifactTypes, setArtifactTypes] = useState<{ id: string; name: string }[]>([]);
   const [isUploading, setIsUploading] = useState(false);
-  
+
   const { handleError, handleSuccess } = useEnhancedErrorHandler();
+
+  useEffect(() => {
+    storageApi.getArtifactTypes(type).then((types) => {
+      setArtifactTypes(types);
+      if (types.length > 0) {
+        setArtifactType(types[0].id);
+      }
+    }).catch(() => {});
+  }, [type]);
 
   const defaultTitle = `Add ${type.charAt(0).toUpperCase() + type.slice(1)} Artifact`;
   const modalTitle = title || defaultTitle;
@@ -42,8 +54,9 @@ const UnifiedArtifactUploadPopup: React.FC<UnifiedArtifactUploadPopupProps> = ({
     setTextContent('');
     setName('');
     setDescription('');
+    setArtifactType(artifactTypes.length > 0 ? artifactTypes[0].id : '');
     setIsUploading(false);
-  }, []);
+  }, [artifactTypes]);
 
   const handleClose = useCallback(() => {
     if (!isUploading) {
@@ -106,6 +119,7 @@ const UnifiedArtifactUploadPopup: React.FC<UnifiedArtifactUploadPopupProps> = ({
         name: name.trim(),
         description: description.trim() ? description.trim() : undefined,
         inputType,
+        artifactType: artifactType || undefined,
         ...(inputType === 'file' && { file: file! }),
         ...(inputType === 'url' && { url: url.trim() }),
         ...(inputType === 'text' && { textContent: textContent.trim() }),
@@ -264,6 +278,28 @@ const UnifiedArtifactUploadPopup: React.FC<UnifiedArtifactUploadPopupProps> = ({
             disabled={isUploading}
           />
         </div>
+
+        {/* Artifact Type Field */}
+        {artifactTypes.length > 0 && (
+          <div>
+            <label htmlFor="artifact-type" className="block text-sm font-medium text-gray-700 dark:text-dark-text mb-2">
+              Artifact Type
+            </label>
+            <select
+              id="artifact-type"
+              value={artifactType}
+              onChange={(e) => setArtifactType(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md
+                       bg-white dark:bg-dark-bg text-gray-900 dark:text-dark-text
+                       focus:ring-2 focus:ring-brand-purple focus:border-transparent"
+              disabled={isUploading}
+            >
+              {artifactTypes.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Description Field */}
         <div>

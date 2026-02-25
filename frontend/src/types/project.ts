@@ -97,6 +97,7 @@ export interface ArtifactUploadData {
   file?: File;
   sourceUrl?: string;  // Standardized field name for external URLs
   textContent?: string;
+  artifactType?: string;
 }
 
 export interface CandidateFormData {
