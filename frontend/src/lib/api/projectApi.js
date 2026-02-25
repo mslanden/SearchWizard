@@ -101,7 +101,10 @@ export const projectApi = {
       // Increment project artifact count
       await incrementCount('projects', 'id', projectId, 'artifact_count');
 
-      return transformDatabaseObject(data);
+      const types = await storageApi.getArtifactTypes('company');
+      const typeMap = Object.fromEntries(types.map(t => [t.id, t.name]));
+      const transformed = transformDatabaseObject(data);
+      return { ...transformed, type: typeMap[data.document_type] || data.document_type || 'company' };
     } catch (error) {
       handleApiError(error, 'add company artifact');
     }
@@ -195,7 +198,10 @@ export const projectApi = {
       // Increment project artifact count
       await incrementCount('projects', 'id', projectId, 'artifact_count');
 
-      return transformDatabaseObject(data);
+      const types = await storageApi.getArtifactTypes('role');
+      const typeMap = Object.fromEntries(types.map(t => [t.id, t.name]));
+      const transformed = transformDatabaseObject(data);
+      return { ...transformed, type: typeMap[data.document_type] || data.document_type || 'role' };
     } catch (error) {
       handleApiError(error, 'add role artifact');
     }

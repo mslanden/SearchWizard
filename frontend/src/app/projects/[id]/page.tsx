@@ -237,7 +237,7 @@ export default function ProjectDetail({ params }: PageProps) {
         const formattedArtifact: Artifact = {
           id: newArtifact.id,
           name: newArtifact.name,
-          type: newArtifact.file_type || newArtifact.fileType || 'Document',
+          type: newArtifact.type || newArtifact.document_type || 'Document',
           dateAdded: new Date(newArtifact.date_added || newArtifact.dateAdded || newArtifact.created_at).toLocaleDateString(),
           url: newArtifact.file_url || newArtifact.fileUrl || newArtifact.url,
           description: newArtifact.description,
