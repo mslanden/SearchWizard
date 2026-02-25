@@ -185,6 +185,10 @@ ALTER TABLE process_artifacts ADD COLUMN IF NOT EXISTS source_url TEXT;
 ALTER TABLE process_artifacts ADD COLUMN IF NOT EXISTS processed_content TEXT;
 ALTER TABLE process_artifacts ADD COLUMN IF NOT EXISTS file_type TEXT;
 ALTER TABLE process_artifacts ADD COLUMN IF NOT EXISTS file_size BIGINT;
+
+-- 5. Add artifacts_count to candidates and interviewers
+ALTER TABLE candidates ADD COLUMN IF NOT EXISTS artifacts_count INTEGER DEFAULT 0;
+ALTER TABLE interviewers ADD COLUMN IF NOT EXISTS artifacts_count INTEGER DEFAULT 0;
 ```
 
 ---

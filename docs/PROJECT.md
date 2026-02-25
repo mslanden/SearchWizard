@@ -160,10 +160,13 @@ Supabase
 | # | Description | Status | Root Cause |
 |---|-------------|--------|-----------|
 | 5 | Project deletion fails | Fixed in `bc96062` | FK constraint — `deleteProject` now cascade-deletes all child records first |
-| 6/7 | Artifact Type dropdown missing from Company/Role upload forms | Fixed in `7afbaee` (deployed in `bc96062`) | TS build failure blocked prior deploy |
+| 6/7 | Artifact Type dropdown missing from Company/Role upload forms | Fixed in `4d4f378` | TS2532 errors in `UnifiedArtifactUploadPopup.tsx` (array index `types[0].id` not narrowed after length check) caused silent Next.js build failure; fixed with `?.id ?? ''` |
 | 8/9 | Candidate/Interviewer photo not shown immediately after add | Open | Race condition — optimistic state update excludes `photoUrl`; appears after refresh |
 | 10 | Candidate artifact upload fails (`input_type` column missing) | Fixed via SQL | `candidate_artifacts` table was missing `input_type` column |
 | 11 | Interviewer profile crashes (`process_artifacts` schema gap) | Fixed via SQL | `process_artifacts` missing multiple columns (`input_type`, `source_url`, etc.) |
+| 12 | Candidate artifact upload fails (`artifacts_count` column missing) | Fixed via SQL | `candidates` and `interviewers` tables were missing `artifacts_count INTEGER` column |
+| 13 | Artifact Type dropdown still missing from Company/Role upload forms (post-bc96062) | Fixed in `4d4f378` | Same TS silent build failure as #6/#7; `bc96062` fix introduced 2 new TS2532 errors |
+| 14 | Admin `/admin/artifact-types` returns 404 (post-bc96062) | Fixed in `4d4f378` | Same TS silent build failure — admin files existed at correct path but build never deployed |
 
 ---
 
