@@ -179,6 +179,7 @@ Supabase
 | 24 | "Add New Candidate" photo upload UI differs from "Add New Interviewer" — UI polish | Open | Candidate popup uses a drag-and-drop file zone; Interviewer popup uses a simple "Upload Photo" button. Standardise to the simpler button style used in the Interviewer popup |
 | 25 | "Edit Candidate Profile" and "Edit Interviewer Profile" popups have no Delete button | Open | Neither edit popup provides a way to delete the candidate or interviewer. A "Delete Profile" button should appear alongside "Save Profile" and "Cancel" in both popups, with a confirmation step before permanently removing the record |
 | 26 | "Edit Candidate Profile" and "Edit Interviewer Profile" popups redundantly show artifacts table | Open | The Candidate Artifacts / Interviewer Artifacts table and "+ Add Artifact" button are already accessible from the main candidate/interviewer profile view. Showing them again inside the edit popup is redundant. Remove the artifacts section (table + add button) from both edit popups |
+| 27 | "Error Loading Project" briefly flashes when opening a project from My Projects | Open | In `projects/[id]/page.tsx` the error render condition is `if (hasError \|\| !state.project)` — on mount, `state.project` is `null` and `loading` is `false`, so the error UI renders for one frame before the fetch begins and `isLoading` becomes true. Fix: guard the error block with `!state.isLoading` AND a true error flag rather than the null project check, so the loading state takes precedence on initial render |
 
 ---
 
