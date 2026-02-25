@@ -170,6 +170,7 @@ Supabase
 | 15 | Company/Role artifact TYPE column shows file MIME type instead of label | Fixed in `142c376` | `addCompanyArtifact`/`addRoleArtifact` returned no `type` field; `handleArtifactUpload` used `file_type` (MIME) for optimistic update. Fixed: insert functions now look up label from `artifact_types` and return it; page.tsx now reads `newArtifact.type` |
 | 16 | "No file selected" error shown on candidate/interviewer profile after successful artifact upload | Fixed in `519698b` | `handleArtifactUploaded` expected raw form data but popup passed the API result (no `.file`); guard always fired, error set, optimistic update skipped. Fixed: handler now treats argument as already-uploaded record |
 | 17 | DATE ADDED column blank after adding a candidate or interviewer artifact | Open | `createdAt` from the API result is not surfaced in the artifact table; current date should be captured at upload time and displayed |
+| 18 | Interviewer artifact upload fails with "new row violates row-level security policy" | Open | RLS policy on `process_artifacts` table is blocking inserts; likely missing or misconfigured INSERT policy for authenticated users |
 
 ---
 
