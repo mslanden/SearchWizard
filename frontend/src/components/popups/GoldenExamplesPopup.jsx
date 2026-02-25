@@ -519,7 +519,6 @@ export default function GoldenExamplesPopup({ onClose }) {
                       <th className="py-3 px-4 text-left font-medium">Name</th>
                       <th className="py-3 px-4 text-left font-medium">Type</th>
                       <th className="py-3 px-4 text-left font-medium">Date Added</th>
-                      <th className="py-3 px-4 text-left font-medium">Features</th>
                       <th className="py-3 px-4 text-left font-medium">Usage</th>
                       <th className="py-3 px-4 text-right font-medium">Actions</th>
                     </tr>
@@ -538,30 +537,10 @@ export default function GoldenExamplesPopup({ onClose }) {
                             </div>
                           </div>
                         </td>
-                        <td className="py-3 px-4 text-gray-700">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            {example.type}
-                          </span>
+                        <td className="py-3 px-4 text-gray-700 text-sm">
+                          {example.type}
                         </td>
                         <td className="py-3 px-4 text-gray-700">{example.dateAdded}</td>
-                        <td className="py-3 px-4">
-                          <div className="flex flex-col space-y-1">
-                            {example.isTemplate ? (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                ✨ Template
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                📄 Document
-                              </span>
-                            )}
-                            {example.hasVisualAnalysis && (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                👁️ Visual
-                              </span>
-                            )}
-                          </div>
-                        </td>
                         <td className="py-3 px-4 text-gray-700">
                           <span className="text-sm font-medium">{example.usageCount || 0}</span>
                           <span className="text-xs text-gray-500 ml-1">uses</span>

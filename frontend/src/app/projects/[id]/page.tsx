@@ -136,12 +136,39 @@ export default function ProjectDetail({ params }: PageProps) {
   const openArtifactUpload = (type: 'company' | 'role') => setArtifactUploadType(type);
   const closeArtifactUpload = () => setArtifactUploadType(null);
 
+  // Handler for deleting a candidate
+  const handleDeleteCandidate = async (candidateId: string) => {
+    if (!confirm('Delete this candidate? This cannot be undone.')) return;
+    try {
+      await artifactApi.deleteCandidate(candidateId);
+      actions.deleteCandidate(candidateId);
+      closeCandidateEdit();
+      showSuccess('Candidate deleted successfully');
+    } catch (err) {
+      handleError(err as Error, 'delete candidate');
+    }
+  };
+
+  // Handler for deleting an interviewer
+  const handleDeleteInterviewer = async (interviewerId: string) => {
+    if (!confirm('Delete this interviewer? This cannot be undone.')) return;
+    try {
+      await artifactApi.deleteInterviewer(interviewerId);
+      actions.deleteInterviewer(interviewerId);
+      closeInterviewerEdit();
+      showSuccess('Interviewer deleted successfully');
+    } catch (err) {
+      handleError(err as Error, 'delete interviewer');
+    }
+  };
+
   // Handler for saving interviewer edits
   const handleSaveInterviewer = async (updatedData: InterviewerFormData) => {
     if (!currentInterviewer || !state.project) return;
     
     try {
       const updatedInterviewer = await artifactApi.updateInterviewer(
+        state.project.id,
         currentInterviewer.id,
         updatedData
       );
@@ -268,7 +295,7 @@ export default function ProjectDetail({ params }: PageProps) {
           company: newCandidate.company,
           email: newCandidate.email,
           phone: newCandidate.phone,
-          photoUrl: newCandidate.photo_url || '/images/default-pfp.webp',
+          photoUrl: newCandidate.photoUrl || '/images/default-pfp.webp',
           artifacts: 0
         });
       }
@@ -294,7 +321,7 @@ export default function ProjectDetail({ params }: PageProps) {
           company: newInterviewer.company,
           email: newInterviewer.email,
           phone: newInterviewer.phone,
-          photoUrl: newInterviewer.photo_url || '/images/default-pfp.webp',
+          photoUrl: newInterviewer.photoUrl || '/images/default-pfp.webp',
           artifacts: 0
         });
       }
@@ -367,7 +394,7 @@ export default function ProjectDetail({ params }: PageProps) {
   }
 
   // Error state
-  if (hasError || !state.project) {
+  if (hasError || (!state.project && !state.loading)) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-dark-bg transition-colors">
         <Header />
@@ -383,6 +410,9 @@ export default function ProjectDetail({ params }: PageProps) {
       </div>
     );
   }
+
+  // TypeScript narrowing guard — state.project is non-null past this point
+  if (!state.project) return null;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-dark-bg transition-colors">
@@ -446,9 +476,10 @@ export default function ProjectDetail({ params }: PageProps) {
 
       {/* Candidate Edit Popup */}
       {isEditCandidateOpen && (
-        <CandidateEditPopup 
+        <CandidateEditPopup
           candidate={currentCandidate}
-          onClose={closeCandidateEdit} 
+          onClose={closeCandidateEdit}
+          onDelete={handleDeleteCandidate}
           onSave={async (updatedCandidate: CandidateFormData) => {
             if (!currentCandidate || !state.project) return;
             
@@ -477,10 +508,11 @@ export default function ProjectDetail({ params }: PageProps) {
       {/* Interviewer Add/Edit Popup */}
       {isEditInterviewerOpen && (
         currentInterviewer ? (
-          <InterviewerEditPopup 
+          <InterviewerEditPopup
             interviewer={currentInterviewer}
-            onClose={closeInterviewerEdit} 
+            onClose={closeInterviewerEdit}
             onSave={handleSaveInterviewer}
+            onDelete={handleDeleteInterviewer}
           />
         ) : (
           <InterviewerAddPopup 

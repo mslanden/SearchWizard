@@ -2,10 +2,8 @@ import { useRef } from 'react';
 import useCandidateEdit from '../../hooks/useCandidateEdit';
 import CandidateProfileDisplay from '../candidate/CandidateProfileDisplay';
 import CandidateProfileForm from '../candidate/CandidateProfileForm';
-import CandidateArtifactsTable from '../candidate/CandidateArtifactsTable';
-import EnhancedCandidateArtifactUploadPopup from './EnhancedCandidateArtifactUploadPopup';
 
-export default function CandidateEditPopup({ candidate, onClose, onSave }) {
+export default function CandidateEditPopup({ candidate, onClose, onSave, onDelete }) {
   const popupRef = useRef(null);
   const {
     // State
@@ -16,27 +14,20 @@ export default function CandidateEditPopup({ candidate, onClose, onSave }) {
     phone, setPhone,
     previewUrl,
     isSubmitting,
-    error, setError,
-    artifacts,
-    isLoadingArtifacts,
-    artifactTypes,
+    error,
     isEditProfile, setIsEditProfile,
-    showUploadPopup, setShowUploadPopup,
-    
+
     // Methods
     handlePhotoChange,
     handleProfileSubmit,
-    handleUploadArtifact,
-    handleArtifactUploaded,
-    handleChangeArtifactType
   } = useCandidateEdit(candidate);
 
   const onSubmit = (e) => handleProfileSubmit(e, onSave);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-[#F0F7FF] rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        
+      <div ref={popupRef} className="bg-[#F0F7FF] rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+
         {/* Profile Header/Form */}
         {!isEditProfile ? (
           <CandidateProfileDisplay
@@ -79,18 +70,18 @@ export default function CandidateEditPopup({ candidate, onClose, onSave }) {
           </div>
         )}
 
-        {/* Artifacts Section */}
-        <div className="p-0 bg-[#F0F7FF]">
-          <CandidateArtifactsTable
-            artifacts={artifacts}
-            artifactTypes={artifactTypes}
-            isLoadingArtifacts={isLoadingArtifacts}
-            onUploadArtifact={handleUploadArtifact}
-            onChangeArtifactType={handleChangeArtifactType}
-          />
-
-          {/* Close Button */}
-          <div className="flex justify-end space-x-3 mt-0 px-6 pb-6">
+        {/* Footer */}
+        <div className="flex justify-between items-center px-6 pb-6 mt-2">
+          {onDelete && (
+            <button
+              type="button"
+              onClick={() => onDelete(candidate?.id)}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md"
+            >
+              Delete Profile
+            </button>
+          )}
+          <div className={`flex space-x-3 ${onDelete ? '' : 'ml-auto'}`}>
             <button
               type="button"
               onClick={onClose}
@@ -101,16 +92,6 @@ export default function CandidateEditPopup({ candidate, onClose, onSave }) {
           </div>
         </div>
       </div>
-
-      {/* Artifact Upload Popup */}
-      {showUploadPopup && candidate && (
-        <EnhancedCandidateArtifactUploadPopup
-          candidateId={candidate.id}
-          candidateName={name}
-          onClose={() => setShowUploadPopup(false)}
-          onSuccess={handleArtifactUploaded}
-        />
-      )}
     </div>
   );
 }

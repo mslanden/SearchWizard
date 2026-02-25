@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { artifactApi } from '../lib/api';
 
 export default function useCandidateEdit(candidate) {
   const [name, setName] = useState('');
@@ -11,11 +10,7 @@ export default function useCandidateEdit(candidate) {
   const [previewUrl, setPreviewUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [artifacts, setArtifacts] = useState([]);
-  const [isLoadingArtifacts, setIsLoadingArtifacts] = useState(false);
-  const [artifactTypes, setArtifactTypes] = useState([]);
   const [isEditProfile, setIsEditProfile] = useState(false);
-  const [showUploadPopup, setShowUploadPopup] = useState(false);
 
   useEffect(() => {
     if (candidate) {
@@ -25,9 +20,6 @@ export default function useCandidateEdit(candidate) {
       setEmail(candidate.email || '');
       setPhone(candidate.phone || '');
       setPreviewUrl(candidate.photoUrl || '/images/default-pfp.webp');
-
-      loadCandidateArtifacts();
-      loadArtifactTypes();
     } else {
       resetForm();
     }
@@ -40,29 +32,6 @@ export default function useCandidateEdit(candidate) {
     setEmail('');
     setPhone('');
     setPreviewUrl('/images/default-pfp.webp');
-  };
-
-  const loadCandidateArtifacts = async () => {
-    if (!candidate || !candidate.id) return;
-
-    setIsLoadingArtifacts(true);
-    try {
-      const candidateArtifacts = await artifactApi.getCandidateArtifacts(candidate.id);
-      setArtifacts(candidateArtifacts || []);
-    } catch (err) {
-      setError('Failed to load candidate artifacts');
-    } finally {
-      setIsLoadingArtifacts(false);
-    }
-  };
-
-  const loadArtifactTypes = async () => {
-    try {
-      const types = await artifactApi.getArtifactTypes('candidate');
-      setArtifactTypes(types || []);
-    } catch (err) {
-      // Failed to load artifact types - continue with empty array
-    }
   };
 
   const handlePhotoChange = (e) => {
@@ -104,40 +73,6 @@ export default function useCandidateEdit(candidate) {
     }
   };
 
-  const handleUploadArtifact = () => {
-    setShowUploadPopup(true);
-  };
-
-  // Receives the already-uploaded artifact record from EnhancedCandidateArtifactUploadPopup
-  // (the popup does the API call itself and passes back the transformed DB result)
-  const handleArtifactUploaded = (uploadedArtifact) => {
-    if (!uploadedArtifact) {
-      setError('Upload failed - no data returned');
-      return;
-    }
-
-    const formattedArtifact = {
-      id: uploadedArtifact.id,
-      name: uploadedArtifact.name,
-      description: uploadedArtifact.description || '',
-      artifactType: uploadedArtifact.artifactType || 'other',
-      dateAdded: uploadedArtifact.createdAt || new Date().toISOString(),
-      fileUrl: uploadedArtifact.fileUrl || '',
-      fileType: uploadedArtifact.fileType || '',
-      fileSize: uploadedArtifact.fileSize || 0
-    };
-
-    setArtifacts(prev => [formattedArtifact, ...prev]);
-    setError('');
-    setShowUploadPopup(false);
-  };
-
-  const handleChangeArtifactType = (artifactId, newType) => {
-    setArtifacts(artifacts.map(a => 
-      a.id === artifactId ? {...a, artifactType: newType} : a
-    ));
-  };
-
   return {
     // State
     name, setName,
@@ -149,17 +84,10 @@ export default function useCandidateEdit(candidate) {
     previewUrl,
     isSubmitting,
     error, setError,
-    artifacts,
-    isLoadingArtifacts,
-    artifactTypes,
     isEditProfile, setIsEditProfile,
-    showUploadPopup, setShowUploadPopup,
-    
+
     // Methods
     handlePhotoChange,
     handleProfileSubmit,
-    handleUploadArtifact,
-    handleArtifactUploaded,
-    handleChangeArtifactType
   };
 }

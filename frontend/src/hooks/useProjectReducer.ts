@@ -69,6 +69,16 @@ const projectReducer = (state: ProjectState, action: ProjectAction): ProjectStat
         }
       };
 
+    case 'DELETE_CANDIDATE':
+      if (!state.project) return state;
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          candidates: state.project.candidates.filter(c => c.id !== action.payload)
+        }
+      };
+
     case 'ADD_INTERVIEWER':
       if (!state.project) return state;
       return {
@@ -88,6 +98,16 @@ const projectReducer = (state: ProjectState, action: ProjectAction): ProjectStat
           interviewers: state.project.interviewers.map(i => 
             i.id === action.payload.id ? { ...i, ...action.payload } : i
           )
+        }
+      };
+
+    case 'DELETE_INTERVIEWER':
+      if (!state.project) return state;
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          interviewers: state.project.interviewers.filter(i => i.id !== action.payload)
         }
       };
 
@@ -139,14 +159,20 @@ export const useProjectReducer = () => {
     addCandidate: useCallback((candidate: Candidate) => 
       dispatch({ type: 'ADD_CANDIDATE', payload: candidate }), []),
 
-    updateCandidate: useCallback((candidate: Candidate) => 
+    updateCandidate: useCallback((candidate: Candidate) =>
       dispatch({ type: 'UPDATE_CANDIDATE', payload: candidate }), []),
+
+    deleteCandidate: useCallback((id: string) =>
+      dispatch({ type: 'DELETE_CANDIDATE', payload: id }), []),
 
     addInterviewer: useCallback((interviewer: Interviewer) => 
       dispatch({ type: 'ADD_INTERVIEWER', payload: interviewer }), []),
 
-    updateInterviewer: useCallback((interviewer: Interviewer) => 
+    updateInterviewer: useCallback((interviewer: Interviewer) =>
       dispatch({ type: 'UPDATE_INTERVIEWER', payload: interviewer }), []),
+
+    deleteInterviewer: useCallback((id: string) =>
+      dispatch({ type: 'DELETE_INTERVIEWER', payload: id }), []),
 
     deleteOutput: useCallback((outputId: string) => 
       dispatch({ type: 'DELETE_OUTPUT', payload: outputId }), []),
