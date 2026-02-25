@@ -176,6 +176,7 @@ Supabase
 | 21 | TYPE column rendered as a highlighted badge/bubble instead of plain text | Fixed in `6ab85ef` | `ArtifactsSection.tsx` replaced pill-styled `<span>` with plain text matching the date column style |
 | 22 | "Generate New Document" dropdown lists Golden Example file names instead of types | Open | The document type dropdown in the Generate popup shows the names of individual uploaded Golden Example files (e.g. "KPMG Role Specification"). It should instead list the Golden Example types from the `artifact_types` table (`category = 'golden'`), e.g. "Role Specification", "Company Briefing". Requires functional change to generation flow — do not fix until scoped |
 | 23 | Editing an existing Interviewer profile fails with "Cannot read properties of undefined (reading 'photoUrl')" | Open | Adding a photo to a pre-existing Interviewer profile (one created without a photo) crashes on Save. The update handler receives `undefined` where it expects an interviewer object with a `photoUrl` field — likely the API response from `updateInterviewer` does not include the full updated record, or the optimistic state update references a stale/missing object |
+| 24 | "Add New Candidate" photo upload UI differs from "Add New Interviewer" — UI polish | Open | Candidate popup uses a drag-and-drop file zone; Interviewer popup uses a simple "Upload Photo" button. Standardise to the simpler button style used in the Interviewer popup |
 
 ---
 
