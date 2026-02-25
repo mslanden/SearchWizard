@@ -42,7 +42,7 @@ const UnifiedArtifactUploadPopup: React.FC<UnifiedArtifactUploadPopupProps> = ({
       .then((types) => {
         setArtifactTypes(types);
         if (types.length > 0) {
-          setArtifactType(types[0].id);
+          setArtifactType(types[0]?.id ?? '');
         }
       })
       .catch(() => {});
@@ -58,7 +58,7 @@ const UnifiedArtifactUploadPopup: React.FC<UnifiedArtifactUploadPopupProps> = ({
     setTextContent('');
     setName('');
     setDescription('');
-    setArtifactType(artifactTypes.length > 0 ? artifactTypes[0].id : '');
+    setArtifactType(artifactTypes.length > 0 ? (artifactTypes[0]?.id ?? '') : '');
     setIsUploading(false);
   }, [artifactTypes]);
 
