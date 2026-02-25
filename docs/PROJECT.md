@@ -167,7 +167,7 @@ Supabase
 | 12 | Candidate artifact upload fails (`artifacts_count` column missing) | Fixed via SQL | `candidates` and `interviewers` tables were missing `artifacts_count INTEGER` column |
 | 13 | Artifact Type dropdown still missing from Company/Role upload forms (post-bc96062) | Fixed in `4d4f378` | Same TS silent build failure as #6/#7; `bc96062` fix introduced 2 new TS2532 errors |
 | 14 | Admin `/admin/artifact-types` returns 404 (post-bc96062) | Fixed in `4d4f378` | Same TS silent build failure — admin files existed at correct path but build never deployed |
-| 15 | Company/Role artifact TYPE column shows file MIME type instead of label | Open | Table renders `file_type` field (`application/pdf`) instead of looking up label from `document_type` via `artifact_types` |
+| 15 | Company/Role artifact TYPE column shows file MIME type instead of label | Fixed in `142c376` | `addCompanyArtifact`/`addRoleArtifact` returned no `type` field; `handleArtifactUpload` used `file_type` (MIME) for optimistic update. Fixed: insert functions now look up label from `artifact_types` and return it; page.tsx now reads `newArtifact.type` |
 | 16 | "No file selected" error shown on candidate profile after successful artifact upload | Open | Stale error state in parent component surfaces after popup closes; transient — clears on refresh, data is correct |
 
 ---
