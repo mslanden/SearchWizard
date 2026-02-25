@@ -40,7 +40,7 @@ export default function InterviewerEditPopup({ interviewer, onClose, onSave }) {
       setPhone('');
       setPreviewUrl('/images/default-pfp.webp');
     }
-  }, [interviewer, loadArtifacts]);
+  }, [interviewer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadArtifacts = async () => {
     if (!interviewer || !interviewer.id) return;
