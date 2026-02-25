@@ -193,15 +193,15 @@ ALTER TABLE interviewers ADD COLUMN IF NOT EXISTS artifacts_count INTEGER DEFAUL
 -- 6. RLS policies for process_artifacts (fixes interviewer artifact upload failure)
 CREATE POLICY "Users can insert own process artifacts"
   ON process_artifacts FOR INSERT
-  WITH CHECK (auth.uid()::text = user_id);
+  WITH CHECK (auth.uid() = user_id::uuid);
 
 CREATE POLICY "Users can view own process artifacts"
   ON process_artifacts FOR SELECT
-  USING (auth.uid()::text = user_id);
+  USING (auth.uid() = user_id::uuid);
 
 CREATE POLICY "Users can delete own process artifacts"
   ON process_artifacts FOR DELETE
-  USING (auth.uid()::text = user_id);
+  USING (auth.uid() = user_id::uuid);
 ```
 
 ---
