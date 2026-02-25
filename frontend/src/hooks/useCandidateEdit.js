@@ -108,57 +108,28 @@ export default function useCandidateEdit(candidate) {
     setShowUploadPopup(true);
   };
 
-  const handleArtifactUploaded = async (artifactData) => {
-    try {
-      if (!artifactData.file) {
-        setError('No file selected. Please select a file to upload.');
-        return;
-      }
-
-      const uploadedArtifact = await artifactApi.addCandidateArtifact(
-        candidate.id,
-        {
-          name: artifactData.name,
-          description: artifactData.description,
-          artifactType: artifactData.artifactType
-        },
-        artifactData.file
-      );
-
-      if (!uploadedArtifact) {
-        setError('Upload failed - no data returned');
-        return;
-      }
-
-      const formattedArtifact = {
-        id: uploadedArtifact.id,
-        name: uploadedArtifact.name,
-        description: uploadedArtifact.description || '',
-        artifactType: uploadedArtifact.artifact_type || 'other',
-        dateAdded: uploadedArtifact.date_added || uploadedArtifact.created_at || new Date().toISOString(),
-        fileUrl: uploadedArtifact.file_url || '',
-        fileType: uploadedArtifact.file_type || '',
-        fileSize: uploadedArtifact.file_size || 0
-      };
-
-      // Add defaults for any missing fields
-      Object.keys(formattedArtifact).forEach(key => {
-        if (formattedArtifact[key] === undefined) {
-          if (key === 'artifactType') formattedArtifact[key] = 'other';
-          else if (key === 'description') formattedArtifact[key] = '';
-          else if (key === 'fileUrl') formattedArtifact[key] = '';
-          else if (key === 'fileType') formattedArtifact[key] = '';
-          else if (key === 'fileSize') formattedArtifact[key] = 0;
-        }
-      });
-
-      setArtifacts(prev => [formattedArtifact, ...prev]);
-      setShowUploadPopup(false);
-    } catch (err) {
-      const errorMessage = err?.message || 
-                         (typeof err === 'object' ? JSON.stringify(err) : 'Unknown error');
-      setError(`Failed to upload artifact: ${errorMessage}`);
+  // Receives the already-uploaded artifact record from EnhancedCandidateArtifactUploadPopup
+  // (the popup does the API call itself and passes back the transformed DB result)
+  const handleArtifactUploaded = (uploadedArtifact) => {
+    if (!uploadedArtifact) {
+      setError('Upload failed - no data returned');
+      return;
     }
+
+    const formattedArtifact = {
+      id: uploadedArtifact.id,
+      name: uploadedArtifact.name,
+      description: uploadedArtifact.description || '',
+      artifactType: uploadedArtifact.artifactType || 'other',
+      dateAdded: uploadedArtifact.createdAt || new Date().toISOString(),
+      fileUrl: uploadedArtifact.fileUrl || '',
+      fileType: uploadedArtifact.fileType || '',
+      fileSize: uploadedArtifact.fileSize || 0
+    };
+
+    setArtifacts(prev => [formattedArtifact, ...prev]);
+    setError('');
+    setShowUploadPopup(false);
   };
 
   const handleChangeArtifactType = (artifactId, newType) => {
