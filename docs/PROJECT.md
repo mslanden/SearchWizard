@@ -172,6 +172,7 @@ Supabase
 | 17 | DATE ADDED column blank after adding a candidate or interviewer artifact | Open | `createdAt` from the API result is not surfaced in the artifact table; current date should be captured at upload time and displayed |
 | 18 | Interviewer artifact upload fails with "new row violates row-level security policy" | Open | RLS policy on `process_artifacts` table is blocking inserts; likely missing or misconfigured INSERT policy for authenticated users |
 | 19 | Admin Artifact Types page: section headings use short labels | Open — UI polish | `/admin/artifact-types` shows "Company Types", "Role Types", etc. Should read "Company Artifact Types", "Role Artifact Types", "Candidate Artifact Types", "Interviewer Artifact Types", "Golden Example Types" |
+| 20 | Company/Role artifact TYPE reverts to "application/pdf" on page refresh | Open | Optimistic update shows correct label (fix #15 working); on refresh `getArtifacts` returns MIME type — either `document_type` is NULL in DB for pre-fix artifacts or the page renders `fileType` instead of `type` when loading from API |
 
 ---
 
