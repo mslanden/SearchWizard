@@ -121,6 +121,7 @@ export const interviewerApi = {
 
       return data.map(artifact => ({
         ...transformDatabaseObject(artifact),
+        dateAdded: artifact.created_at,
         type: typeMap[artifact.artifact_type] || artifact.artifact_type
       }));
     } catch (error) {

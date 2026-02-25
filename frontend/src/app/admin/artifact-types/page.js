@@ -16,11 +16,11 @@ import AdminProtectedRoute from '../../../components/AdminProtectedRoute';
 import { supabase } from '../../../lib/supabase';
 
 const CATEGORIES = [
-  { id: 'company', label: 'Company' },
-  { id: 'role', label: 'Role' },
-  { id: 'candidate', label: 'Candidate' },
-  { id: 'process', label: 'Interviewer' },
-  { id: 'golden', label: 'Golden Examples' }
+  { id: 'company',   label: 'Company Artifact Types' },
+  { id: 'role',      label: 'Role Artifact Types' },
+  { id: 'candidate', label: 'Candidate Artifact Types' },
+  { id: 'process',   label: 'Interviewer Artifact Types' },
+  { id: 'golden',    label: 'Golden Example Types' }
 ];
 
 function slugify(name) {
@@ -241,7 +241,7 @@ function ArtifactTypeManagement() {
         <div className="bg-white rounded-lg shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900">
-              {CATEGORIES.find(c => c.id === activeCategory)?.label} Types
+              {CATEGORIES.find(c => c.id === activeCategory)?.label}
             </h2>
             <button
               onClick={() => { setIsAdding(true); setEditingId(null); setAddError(''); }}

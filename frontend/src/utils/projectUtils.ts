@@ -154,7 +154,7 @@ export const fetchProjectData = async (projectId: string) => {
     const formattedCompanyArtifacts: Artifact[] = companyArtifacts?.map(artifact => ({
       id: artifact.id,
       name: artifact.name,
-      type: artifact.fileType || 'Document',
+      type: artifact.type || 'Document',
       dateAdded: new Date(artifact.dateAdded).toLocaleDateString(),
       url: artifact.fileUrl,
       description: artifact.description,
@@ -166,7 +166,7 @@ export const fetchProjectData = async (projectId: string) => {
     const formattedRoleArtifacts: Artifact[] = roleArtifacts?.map(artifact => ({
       id: artifact.id,
       name: artifact.name,
-      type: artifact.fileType || 'Document',
+      type: artifact.type || 'Document',
       dateAdded: new Date(artifact.dateAdded).toLocaleDateString(),
       url: artifact.fileUrl,
       description: artifact.description,
