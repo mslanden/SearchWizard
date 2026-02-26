@@ -45,6 +45,10 @@ interface ProjectPopupsProps {
   onCloseArtifactUpload: () => void;
   onArtifactUpload: (data: ArtifactUploadData) => Promise<void>;
   onSetViewingDocument: (url: string | null) => void;
+  onCandidateArtifactAdded?: (candidateId: string) => void;
+  onCandidateArtifactDeleted?: (candidateId: string) => void;
+  onInterviewerArtifactAdded?: (interviewerId: string) => void;
+  onInterviewerArtifactDeleted?: (interviewerId: string) => void;
 }
 
 export default function ProjectPopups({
@@ -75,6 +79,10 @@ export default function ProjectPopups({
   onCloseArtifactUpload,
   onArtifactUpload,
   onSetViewingDocument,
+  onCandidateArtifactAdded,
+  onCandidateArtifactDeleted,
+  onInterviewerArtifactAdded,
+  onInterviewerArtifactDeleted,
 }: ProjectPopupsProps) {
   return (
     <>
@@ -93,6 +101,8 @@ export default function ProjectPopups({
           onClose={onCloseCandidateEdit}
           onDelete={onDeleteCandidate}
           onSave={onSaveCandidate}
+          onArtifactAdded={onCandidateArtifactAdded}
+          onArtifactDeleted={onCandidateArtifactDeleted}
         />
       )}
 
@@ -104,6 +114,8 @@ export default function ProjectPopups({
             onClose={onCloseInterviewerEdit}
             onSave={onSaveInterviewer}
             onDelete={onDeleteInterviewer}
+            onArtifactAdded={onInterviewerArtifactAdded}
+            onArtifactDeleted={onInterviewerArtifactDeleted}
           />
         ) : (
           <InterviewerAddPopup

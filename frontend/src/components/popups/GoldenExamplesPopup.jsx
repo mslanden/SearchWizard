@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { XMarkIcon, DocumentIcon, ArrowUpTrayIcon, PlusIcon, TrashIcon, DocumentTextIcon, CogIcon, EyeIcon } from '@heroicons/react/24/outline';
 import { artifactApi } from '../../lib/api';
 import { storageApi } from '../../lib/api/storageApi';
+import { supabase } from '../../lib/supabase';
 import StructureViewer from '../StructureViewer';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -140,6 +141,31 @@ export default function GoldenExamplesPopup({ onClose }) {
     }
   }
 
+  // Extract bucket-relative file path from any Supabase storage URL
+  function extractStoragePath(url, bucket) {
+    if (!url) return null;
+    const regex = new RegExp(`/object/(?:public|sign)/${bucket}/([^?]+)`);
+    const match = url.match(regex);
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+
+  // Handle viewing the original file — generates a fresh signed URL to avoid 400 errors on expiry
+  async function handleViewFile(example) {
+    const filePath = extractStoragePath(example.url, 'golden-examples');
+    if (!filePath) {
+      alert('File path not available for this example.');
+      return;
+    }
+    const { data, error: signError } = await supabase.storage
+      .from('golden-examples')
+      .createSignedUrl(filePath, 3600);
+    if (signError || !data?.signedUrl) {
+      alert('Could not generate a download link. Please try again.');
+      return;
+    }
+    window.open(data.signedUrl, '_blank');
+  }
+
   // Handle viewing structure for V2 templates
   async function handleViewStructure(example) {
     try {
@@ -203,9 +229,10 @@ export default function GoldenExamplesPopup({ onClose }) {
         return;
       }
 
-      // Validate file type
-      if (!allowedTypes.includes(file.type) && 
-          !(file.name.endsWith('.md') && file.type === 'text/markdown')) {
+      // Validate file type — use extension fallback for files like .md reported as application/octet-stream
+      const allowedExtensions = ['pdf', 'doc', 'docx', 'txt', 'md', 'json', 'csv', 'html', 'jpg', 'jpeg', 'png', 'xls', 'xlsx', 'ppt', 'pptx'];
+      const fileExt = (file.name.toLowerCase().split('.').pop()) || '';
+      if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExt)) {
         setUploadError(`File type of ${file.name} (${file.type}) is not supported. Please upload only document, spreadsheet, or image files.`);
         return;
       }
@@ -547,15 +574,14 @@ export default function GoldenExamplesPopup({ onClose }) {
                         </td>
                         <td className="py-3 px-4 text-right">
                           <div className="flex space-x-3 justify-end">
-                            <a
-                              href={example.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                            <button
+                              type="button"
+                              onClick={() => handleViewFile(example)}
                               className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-100"
                               title="View file"
                             >
                               <DocumentTextIcon className="h-5 w-5" />
-                            </a>
+                            </button>
                             <button
                               onClick={() => handleViewStructure(example)}
                               className="text-green-600 hover:text-green-800 p-1 rounded hover:bg-green-100"

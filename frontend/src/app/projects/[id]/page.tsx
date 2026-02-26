@@ -200,6 +200,23 @@ export default function ProjectDetail({ params }: PageProps) {
     }
   };
 
+  // Callbacks for artifact count updates from edit popups
+  const handleCandidateArtifactAdded = (candidateId: string) => {
+    actions.incrementCandidateArtifactCount(candidateId);
+  };
+
+  const handleCandidateArtifactDeleted = (candidateId: string) => {
+    actions.decrementCandidateArtifactCount(candidateId);
+  };
+
+  const handleInterviewerArtifactAdded = (interviewerId: string) => {
+    actions.incrementInterviewerArtifactCount(interviewerId);
+  };
+
+  const handleInterviewerArtifactDeleted = (interviewerId: string) => {
+    actions.decrementInterviewerArtifactCount(interviewerId);
+  };
+
   // Handle document deletion
   const handleDeleteDocument = async (documentId: string, documentName: string) => {
     if (!confirm(`Are you sure you want to delete "${documentName}"? This action cannot be undone.`)) {
@@ -508,6 +525,10 @@ export default function ProjectDetail({ params }: PageProps) {
         onCloseArtifactUpload={closeArtifactUpload}
         onArtifactUpload={handleArtifactUpload}
         onSetViewingDocument={setViewingDocument}
+        onCandidateArtifactAdded={handleCandidateArtifactAdded}
+        onCandidateArtifactDeleted={handleCandidateArtifactDeleted}
+        onInterviewerArtifactAdded={handleInterviewerArtifactAdded}
+        onInterviewerArtifactDeleted={handleInterviewerArtifactDeleted}
       />
     </div>
   );

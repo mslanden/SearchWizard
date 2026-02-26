@@ -151,8 +151,7 @@ export const interviewerApi = {
         position: updatedData.position || updatedData.role || '',
         company: updatedData.company || '',
         email: updatedData.email || '',
-        phone: updatedData.phone || '',
-        updated_at: new Date().toISOString()
+        phone: updatedData.phone || ''
       };
 
       if (photoUrl) {

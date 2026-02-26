@@ -54,7 +54,7 @@ const ArtifactTable = memo<ArtifactTableProps>(({
           <p className="text-sm mt-1">Click "Add" to upload your first artifact</p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-scroll">
           <table className="w-full">
             <thead className="text-xs text-gray-500 dark:text-dark-text-secondary uppercase bg-gray-50 dark:bg-dark-bg-tertiary border-b border-gray-200 dark:border-dark-border">
               <tr>

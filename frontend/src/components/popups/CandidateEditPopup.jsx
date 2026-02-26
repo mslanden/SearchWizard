@@ -6,7 +6,7 @@ import CandidateArtifactsTable from '../candidate/CandidateArtifactsTable';
 import EnhancedArtifactUploadPopup from './EnhancedArtifactUploadPopup';
 import { candidateApi } from '../../lib/api';
 
-export default function CandidateEditPopup({ candidate, onClose, onSave, onDelete }) {
+export default function CandidateEditPopup({ candidate, onClose, onSave, onDelete, onArtifactAdded, onArtifactDeleted }) {
   const popupRef = useRef(null);
   const {
     // State
@@ -45,6 +45,7 @@ export default function CandidateEditPopup({ candidate, onClose, onSave, onDelet
     };
     const result = await candidateApi.addCandidateArtifact(candidate.id, artifactData, uploadPayload.file || null);
     await handleArtifactUploaded(result);
+    if (result && onArtifactAdded) onArtifactAdded(candidate.id);
     return result;
   };
 

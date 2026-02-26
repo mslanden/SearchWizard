@@ -111,6 +111,54 @@ const projectReducer = (state: ProjectState, action: ProjectAction): ProjectStat
         }
       };
 
+    case 'INCREMENT_CANDIDATE_ARTIFACT_COUNT':
+      if (!state.project) return state;
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          candidates: state.project.candidates.map(c =>
+            c.id === action.payload ? { ...c, artifacts: (c.artifacts || 0) + 1 } : c
+          )
+        }
+      };
+
+    case 'DECREMENT_CANDIDATE_ARTIFACT_COUNT':
+      if (!state.project) return state;
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          candidates: state.project.candidates.map(c =>
+            c.id === action.payload ? { ...c, artifacts: Math.max(0, (c.artifacts || 0) - 1) } : c
+          )
+        }
+      };
+
+    case 'INCREMENT_INTERVIEWER_ARTIFACT_COUNT':
+      if (!state.project) return state;
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          interviewers: state.project.interviewers.map(i =>
+            i.id === action.payload ? { ...i, artifacts: (i.artifacts || 0) + 1 } : i
+          )
+        }
+      };
+
+    case 'DECREMENT_INTERVIEWER_ARTIFACT_COUNT':
+      if (!state.project) return state;
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          interviewers: state.project.interviewers.map(i =>
+            i.id === action.payload ? { ...i, artifacts: Math.max(0, (i.artifacts || 0) - 1) } : i
+          )
+        }
+      };
+
     case 'DELETE_OUTPUT':
       if (!state.project) return state;
       return {
@@ -174,7 +222,19 @@ export const useProjectReducer = () => {
     deleteInterviewer: useCallback((id: string) =>
       dispatch({ type: 'DELETE_INTERVIEWER', payload: id }), []),
 
-    deleteOutput: useCallback((outputId: string) => 
+    incrementCandidateArtifactCount: useCallback((id: string) =>
+      dispatch({ type: 'INCREMENT_CANDIDATE_ARTIFACT_COUNT', payload: id }), []),
+
+    decrementCandidateArtifactCount: useCallback((id: string) =>
+      dispatch({ type: 'DECREMENT_CANDIDATE_ARTIFACT_COUNT', payload: id }), []),
+
+    incrementInterviewerArtifactCount: useCallback((id: string) =>
+      dispatch({ type: 'INCREMENT_INTERVIEWER_ARTIFACT_COUNT', payload: id }), []),
+
+    decrementInterviewerArtifactCount: useCallback((id: string) =>
+      dispatch({ type: 'DECREMENT_INTERVIEWER_ARTIFACT_COUNT', payload: id }), []),
+
+    deleteOutput: useCallback((outputId: string) =>
       dispatch({ type: 'DELETE_OUTPUT', payload: outputId }), []),
 
     toggleOutputSelection: useCallback((outputId: string) => 

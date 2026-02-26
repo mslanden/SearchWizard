@@ -5,7 +5,7 @@ import { artifactApi } from '../../lib/api';
 import EnhancedArtifactUploadPopup from './EnhancedArtifactUploadPopup';
 import { interviewerApi } from '../../lib/api';
 
-export default function InterviewerEditPopup({ interviewer, onClose, onSave, onDelete }) {
+export default function InterviewerEditPopup({ interviewer, onClose, onSave, onDelete, onArtifactAdded, onArtifactDeleted }) {
   const popupRef = useRef(null);
   const [name, setName] = useState('');
   const [position, setPosition] = useState('');
@@ -147,6 +147,7 @@ export default function InterviewerEditPopup({ interviewer, onClose, onSave, onD
     };
     const result = await interviewerApi.addProcessArtifact(interviewer.id, artifactData, uploadPayload.file || null);
     await handleArtifactUploaded(result);
+    if (result && onArtifactAdded) onArtifactAdded(interviewer.id);
     return result;
   };
 
