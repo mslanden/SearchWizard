@@ -38,17 +38,16 @@ User Browser
 Next.js Frontend (Vercel)
     │  App Router pages + React components
     │  Supabase JS client (auth + DB + storage)
-    │  API routes proxy → Railway backend
+    │  Direct fetch to Railway backend (no Next.js proxy for generation)
     │
     ▼
 FastAPI Backend (Railway)
-    │  Document generation pipeline
+    │  Document generation pipeline (V2 — direct Claude API call)
+    │  Golden example analysis pipeline
     │  File parsing pipeline
-    │  Knowledge base injection
     │
-    ├── StructureAgent  →  analyzes golden examples → JSON template
-    ├── WriterAgent     →  JSON template + KB + artifacts → HTML document
-    ├── ImageAnalyzer   →  extracts images/positions from PDFs
+    ├── StructureAgent  →  analyzes uploaded golden examples → template_prompt + visual_data
+    ├── ImageAnalyzer   →  extracts images/layout from PDF golden examples
     ├── DocumentParser  →  LlamaParse premium → fast → PyMuPDF → fallback
     ├── CacheService    →  Redis (optional) / in-memory fallback
     └── AgentWrapper    →  routes to Anthropic / OpenAI / Gemini
@@ -65,18 +64,35 @@ Supabase
     │                   project-outputs, golden-examples
 ```
 
-### Data Flow — Document Generation
+### Data Flow — Document Generation (V2)
 
 1. User selects a Project and clicks **Generate Document**
-2. Frontend fetches project artifacts from Supabase storage
-3. Frontend calls backend `/api/generate-document` with:
-   `{ template_id, project_id, user_id, user_requirements }`
-4. **StructureAgent** reads golden example documents → extracts a JSON structure
-   (sections, tone, formatting rules, document type)
-5. **WriterAgent** combines structure + knowledge base files + project artifacts →
-   calls Claude 3.5 Sonnet → returns full styled HTML document
-6. HTML is saved to Supabase `project-outputs` storage bucket
+2. Frontend popup (`GenerateDocumentPopup`) collects `templateId` + `userRequirements`
+3. `useDocumentGeneration` hook calls backend `/api/generate-document` directly
+   (no Next.js proxy — direct fetch to Railway)
+4. Backend `generate_document_v2` handler:
+   - Fetches the selected golden example record from `golden_examples` table
+     (includes `template_prompt` and `visual_data` generated at upload time)
+   - Fetches up to 3 company artifacts, 3 role artifacts, 5 candidates, 3 interviewers
+     from Supabase for context
+   - Builds a single generation prompt combining:
+     `template_prompt` + company/role context + candidate/interviewer info +
+     `visual_data` (JSON) + user requirements
+   - Calls `claude-sonnet-4-6` with `max_tokens=8000`
+5. Returns HTML document to the frontend
+6. Frontend saves HTML to Supabase `project-outputs` bucket and inserts metadata row
 7. Output appears in the project's Outputs section; viewed inline via `HtmlDocumentViewer`
+
+### Data Flow — Golden Example Upload
+
+1. User uploads a file via the Golden Examples popup
+2. Backend stores the file in the `golden-examples` Supabase storage bucket
+3. **StructureAgent** runs Claude Vision on the first 2 pages of the PDF → produces
+   `visual_data` (layout, typography, colour, spacing as JSON)
+4. Backend extracts up to 15,000 chars of text from the document
+5. A second Claude call uses that text to produce `template_prompt`
+   (a structured instruction block that guides later document generation)
+6. `template_prompt` and `visual_data` are stored in the `golden_examples` DB row
 
 ### Frontend Route Map
 
@@ -98,14 +114,15 @@ Supabase
 
 | Constraint | Detail |
 |-----------|--------|
-| Hardcoded backend URL | `https://searchwizard-production.up.railway.app` appears in several frontend files in addition to the env var. Use `NEXT_PUBLIC_BACKEND_URL` env var where possible. |
-| `max_tokens=4096` | WriterAgent is capped at 4096 output tokens — long documents may be truncated. Increase if generation is cutting off. |
+| Backend URL env var | Use `NEXT_PUBLIC_BACKEND_URL` for all frontend → backend calls. Fallback to `https://searchwizard-production.up.railway.app` remains in `analyze-file` and `analyze-structure` API routes (by design — these are Next.js server-side routes). |
+| `max_tokens` per endpoint | `backend/api.py` uses named constants: `VISION_MAX_TOKENS=2000`, `TEMPLATE_MAX_TOKENS=3000`, `GENERATION_MAX_TOKENS=8000`. If generation is observed to truncate, raise `GENERATION_MAX_TOKENS`. |
 | CSP per branch | `next.config.js` `connect-src` must include the backend URL for each environment. Staging branch includes staging Railway URL; main does not. |
-| Claude model | `claude-sonnet-4-6` (upgraded from deprecated `claude-3-5-sonnet-20241022` Feb 2026). Defined in `backend/agent_wrapper/anthropic.py` and `backend/api.py`. |
+| Claude model | `claude-sonnet-4-6` (upgraded from deprecated `claude-3-5-sonnet-20241022` Feb 2026). Defined in `backend/agent_wrapper/anthropic.py` and 3 direct calls in `backend/api.py`. See ADR-007. |
 | Shared Supabase (staging + production) | Both environments currently share one Supabase project. See `docs/DECISIONS.md` — must be separated before public launch. |
 | Admin approval required | `adminApprovalSystem: true` in `features.js`. New users cannot access the app until an admin approves them. Requires `user_roles` table and two Supabase stored procedures: `get_user_status_for_auth` and `check_is_admin`. |
 | LLM provider priority | Anthropic → OpenAI → Gemini, determined by which API key env vars are present. Anthropic must always be configured. |
 | Mixed JS/TS codebase | Frontend has a mix of `.js`, `.jsx`, `.ts`, `.tsx` files. New files should use TypeScript. |
+| Golden example content limit | `MAX_TEMPLATE_CONTENT_CHARS = 15000` in `api.py` — only the first 15,000 chars of an uploaded golden example file are used to generate `template_prompt`. Previously 3,000 chars; raised Feb 2026. |
 
 ---
 
@@ -126,14 +143,16 @@ Supabase
 - Staging environment (Railway + Vercel) — set up Feb 2026
 
 ### Known Technical Debt
-- Multiple overlapping artifact upload popup components exist
-  (`UnifiedArtifactUploadPopup`, `EnhancedArtifactUploadPopup`, `ArtifactUploadPopup`,
-  `CandidateArtifactUploadPopup`, `ProcessArtifactUploadPopup`) — consolidation needed.
-  `UnifiedArtifactUploadPopup` is the canonical component for company/role uploads.
-- `kb_support.py` and `knowledge_helper.py` serve near-identical purposes — deduplicate
-- `/backend/tools/mcp.py` is an empty placeholder
 - Knowledge base files (`company-overview.txt`, `product-specs.txt`) are template
   placeholders — only `info-agentica.md` has real content
+- `kb_support.py` still exists; it was the sibling of the now-deleted `knowledge_helper.py`
+  — review whether `kb_support.py` is actively used or can also be deleted
+- `WriterAgent` (`backend/agents/writer_agent.py`) is no longer imported by `api.py`;
+  the legacy `/generate-document` endpoint that used it was deleted. The file can be
+  removed unless it's needed for a future use case
+- The Claude model string `claude-sonnet-4-6` appears in 3 places in `api.py` and once
+  in `agent_wrapper/anthropic.py` — consider centralising into a single `ANTHROPIC_MODEL`
+  constant or env var (noted in ADR-007)
 - One open draft PR: Vercel auto-generated React Server Components CVE security patch
   — review and merge or close
 - **TypeScript + JS module import rule:** When importing from `.js` API files into `.tsx`
@@ -145,13 +164,14 @@ Supabase
 ### What's Next (Priority Order)
 1. ✅ Staging environment setup (completed Feb 2026)
 2. ✅ Artifact type system — DB-driven dropdowns for all artifact categories (Feb 2026)
-3. Review and act on the open CVE security patch PR
-4. Make and test significant UI/feature changes on `staging` before pushing to `main`
-5. Fix Bug #22 (Generate New Document dropdown lists file names instead of types) — requires scoping before fixing
-6. Separate Supabase projects (staging vs production) — **required before public launch**
-7. Increase `max_tokens` beyond 4096 if document truncation is observed
-8. Consolidate duplicate artifact upload popup components
-9. Populate knowledge base files with real Agentica AI content
+3. ✅ Code review cleanup — dead code deleted, constants extracted, components consolidated (Feb 2026, commit `86f4227`)
+4. Review and act on the open CVE security patch PR
+5. Make and test significant UI/feature changes on `staging` before pushing to `main`
+6. Fix Bug #22 (Generate New Document dropdown lists file names instead of types) — requires scoping before fixing
+7. Separate Supabase projects (staging vs production) — **required before public launch**
+8. Populate knowledge base files with real Agentica AI content
+9. Remove `WriterAgent` file (`backend/agents/writer_agent.py`) — no longer imported
+10. Centralise the Claude model string into `ANTHROPIC_MODEL` constant or env var
 
 ### Open Bug Log (Staging — Feb 2026)
 
