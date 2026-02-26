@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { XMarkIcon, UserCircleIcon, DocumentIcon, LinkIcon, DocumentTextIcon, PlusIcon, PencilIcon } from '@heroicons/react/24/outline';
 import { artifactApi } from '../../lib/api';
-import EnhancedProcessArtifactUploadPopup from './EnhancedProcessArtifactUploadPopup';
+import EnhancedArtifactUploadPopup from './EnhancedArtifactUploadPopup';
+import { interviewerApi } from '../../lib/api';
 
 export default function InterviewerEditPopup({ interviewer, onClose, onSave, onDelete }) {
   const popupRef = useRef(null);
@@ -133,6 +134,20 @@ export default function InterviewerEditPopup({ interviewer, onClose, onSave, onD
     setArtifacts(artifacts.map(a =>
       a.id === artifactId ? { ...a, artifactType: newType } : a
     ));
+  };
+
+  const handleInterviewerArtifactUpload = async (uploadPayload) => {
+    const artifactData = {
+      name: uploadPayload.name,
+      description: uploadPayload.description,
+      artifactType: uploadPayload.artifactType,
+      inputType: uploadPayload.inputType,
+      ...(uploadPayload.inputType === 'url' ? { sourceUrl: uploadPayload.sourceUrl } : {}),
+      ...(uploadPayload.inputType === 'text' ? { textContent: uploadPayload.textContent } : {}),
+    };
+    const result = await interviewerApi.addProcessArtifact(interviewer.id, artifactData, uploadPayload.file || null);
+    await handleArtifactUploaded(result);
+    return result;
   };
 
   const getArtifactIcon = (typeName) => {
@@ -419,11 +434,10 @@ export default function InterviewerEditPopup({ interviewer, onClose, onSave, onD
 
       {/* Artifact Upload Popup */}
       {showUploadPopup && interviewer && (
-        <EnhancedProcessArtifactUploadPopup
-          interviewerId={interviewer.id}
-          interviewerName={interviewer.name}
+        <EnhancedArtifactUploadPopup
+          type="process"
           onClose={() => setShowUploadPopup(false)}
-          onSuccess={handleArtifactUploaded}
+          onUpload={handleInterviewerArtifactUpload}
         />
       )}
     </div>

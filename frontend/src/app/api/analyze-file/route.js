@@ -28,8 +28,8 @@ export async function POST(request) {
     const newFormData = new FormData();
     newFormData.append('file', file);
 
-    // Forward the request to the Render backend
-    const backendUrl = 'https://searchwizard-production.up.railway.app/analyze-file';
+    // Forward the request to the backend
+    const backendUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL || 'https://searchwizard-production.up.railway.app'}/analyze-file`;
 
     try {
       // Forward the request to the Render backend with a longer timeout

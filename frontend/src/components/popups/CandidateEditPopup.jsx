@@ -3,7 +3,8 @@ import useCandidateEdit from '../../hooks/useCandidateEdit';
 import CandidateProfileDisplay from '../candidate/CandidateProfileDisplay';
 import CandidateProfileForm from '../candidate/CandidateProfileForm';
 import CandidateArtifactsTable from '../candidate/CandidateArtifactsTable';
-import EnhancedCandidateArtifactUploadPopup from './EnhancedCandidateArtifactUploadPopup';
+import EnhancedArtifactUploadPopup from './EnhancedArtifactUploadPopup';
+import { candidateApi } from '../../lib/api';
 
 export default function CandidateEditPopup({ candidate, onClose, onSave, onDelete }) {
   const popupRef = useRef(null);
@@ -32,6 +33,20 @@ export default function CandidateEditPopup({ candidate, onClose, onSave, onDelet
   } = useCandidateEdit(candidate);
 
   const onSubmit = (e) => handleProfileSubmit(e, onSave);
+
+  const handleCandidateArtifactUpload = async (uploadPayload) => {
+    const artifactData = {
+      name: uploadPayload.name,
+      description: uploadPayload.description,
+      artifactType: uploadPayload.artifactType,
+      inputType: uploadPayload.inputType,
+      ...(uploadPayload.inputType === 'url' ? { sourceUrl: uploadPayload.sourceUrl } : {}),
+      ...(uploadPayload.inputType === 'text' ? { textContent: uploadPayload.textContent } : {}),
+    };
+    const result = await candidateApi.addCandidateArtifact(candidate.id, artifactData, uploadPayload.file || null);
+    await handleArtifactUploaded(result);
+    return result;
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -117,11 +132,10 @@ export default function CandidateEditPopup({ candidate, onClose, onSave, onDelet
 
       {/* Artifact Upload Popup */}
       {showUploadPopup && candidate && (
-        <EnhancedCandidateArtifactUploadPopup
-          candidateId={candidate.id}
-          candidateName={name}
+        <EnhancedArtifactUploadPopup
+          type="candidate"
           onClose={() => setShowUploadPopup(false)}
-          onSuccess={handleArtifactUploaded}
+          onUpload={handleCandidateArtifactUpload}
         />
       )}
     </div>

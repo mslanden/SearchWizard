@@ -108,8 +108,6 @@ export default function useCandidateEdit(candidate) {
     setShowUploadPopup(true);
   };
 
-  // Receives the already-uploaded artifact record from EnhancedCandidateArtifactUploadPopup
-  // (the popup does the API call itself and passes back the transformed DB result)
   const handleArtifactUploaded = (uploadedArtifact) => {
     if (!uploadedArtifact) {
       setError('Upload failed - no data returned');

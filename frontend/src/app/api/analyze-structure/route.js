@@ -16,8 +16,8 @@ export async function POST(request) {
       );
     }
 
-    // Forward the request to the Render backend
-    const backendUrl = 'https://searchwizard-production.up.railway.app/analyze-structure';
+    // Forward the request to the backend
+    const backendUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL || 'https://searchwizard-production.up.railway.app'}/analyze-structure`;
 
     try {
       // Forward the request to the Render backend
