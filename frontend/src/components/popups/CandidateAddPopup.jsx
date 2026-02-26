@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { XMarkIcon, UserCircleIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline';
-import SecureFileUpload from '../SecureFileUpload';
+import { XMarkIcon, UserCircleIcon } from '@heroicons/react/24/outline';
 import { validateForm, commonValidators, validators, sanitizers } from '../../utils/validation';
 
 export default function CandidateAddPopup({ onClose, onAdd }) {
@@ -114,16 +113,16 @@ export default function CandidateAddPopup({ onClose, onAdd }) {
                   <UserCircleIcon className="w-16 h-16 text-gray-400" />
                 )}
               </div>
-              <div className="flex-1">
-                <SecureFileUpload
-                  acceptedTypes="images"
-                  onFileSelect={handlePhotoSelect}
-                  onError={(errors) => setFieldErrors(prev => ({ ...prev, photo: errors[0] }))}
-                  maxSize={10485760} // 10MB
-                  required={false}
-                  showPreview={false}
-                  className="w-full"
-                />
+              <div>
+                <label className="inline-block bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-md cursor-pointer">
+                  Upload Photo
+                  <input
+                    type="file"
+                    className="hidden"
+                    onChange={(e) => handlePhotoSelect(e.target.files[0])}
+                    accept="image/*"
+                  />
+                </label>
                 {fieldErrors.photo && (
                   <p className="mt-1 text-sm text-red-600">{fieldErrors.photo}</p>
                 )}

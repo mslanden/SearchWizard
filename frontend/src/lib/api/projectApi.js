@@ -2,12 +2,13 @@ import { supabase } from '../supabase';
 import { v4 as uuidv4 } from 'uuid';
 import { storageBuckets } from './config';
 import { storageApi } from './storageApi';
-import { 
-  getCurrentUser, 
-  handleApiError, 
-  validateRequiredFields, 
+import {
+  getCurrentUser,
+  handleApiError,
+  validateRequiredFields,
   transformDatabaseObject,
-  incrementCount
+  incrementCount,
+  decrementCount
 } from './utils';
 
 export const projectApi = {
@@ -64,6 +65,7 @@ export const projectApi = {
         name: artifactData.name,
         description: artifactData.description || '',
         artifact_type: 'company',
+        document_type: artifactData.artifactType || null,
         input_type: inputType,
         user_id: user.id,  // Changed from created_by to user_id
         created_at: new Date().toISOString()
@@ -99,7 +101,10 @@ export const projectApi = {
       // Increment project artifact count
       await incrementCount('projects', 'id', projectId, 'artifact_count');
 
-      return transformDatabaseObject(data);
+      const types = await storageApi.getArtifactTypes('company');
+      const typeMap = Object.fromEntries(types.map(t => [t.id, t.name]));
+      const transformed = transformDatabaseObject(data);
+      return { ...transformed, type: typeMap[data.document_type] || data.document_type || 'company' };
     } catch (error) {
       handleApiError(error, 'add company artifact');
     }
@@ -158,6 +163,7 @@ export const projectApi = {
         name: artifactData.name,
         description: artifactData.description || '',
         artifact_type: 'role',
+        document_type: artifactData.artifactType || null,
         input_type: inputType,
         user_id: user.id
       };
@@ -192,7 +198,10 @@ export const projectApi = {
       // Increment project artifact count
       await incrementCount('projects', 'id', projectId, 'artifact_count');
 
-      return transformDatabaseObject(data);
+      const types = await storageApi.getArtifactTypes('role');
+      const typeMap = Object.fromEntries(types.map(t => [t.id, t.name]));
+      const transformed = transformDatabaseObject(data);
+      return { ...transformed, type: typeMap[data.document_type] || data.document_type || 'role' };
     } catch (error) {
       handleApiError(error, 'add role artifact');
     }
@@ -216,7 +225,19 @@ export const projectApi = {
         throw error;
       }
 
-      return data.map(transformDatabaseObject);
+      // Build a type label map from DB types for all categories present
+      const categories = [...new Set(data.map(a => a.artifact_type))];
+      const typesResults = await Promise.all(
+        categories.map(cat => storageApi.getArtifactTypes(cat))
+      );
+      const typeMap = Object.fromEntries(
+        typesResults.flat().map(t => [t.id, t.name])
+      );
+
+      return data.map(artifact => ({
+        ...transformDatabaseObject(artifact),
+        type: typeMap[artifact.document_type] || artifact.document_type || artifact.artifact_type
+      }));
     } catch (error) {
       handleApiError(error, 'get artifacts');
     }

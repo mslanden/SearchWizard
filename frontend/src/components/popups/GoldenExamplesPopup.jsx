@@ -3,17 +3,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { XMarkIcon, DocumentIcon, ArrowUpTrayIcon, PlusIcon, TrashIcon, DocumentTextIcon, CogIcon, EyeIcon } from '@heroicons/react/24/outline';
 import { artifactApi } from '../../lib/api';
+import { storageApi } from '../../lib/api/storageApi';
+import { supabase } from '../../lib/supabase';
 import StructureViewer from '../StructureViewer';
 import { useAuth } from '../../contexts/AuthContext';
 
-const EXAMPLE_TYPE_LABELS = {
-  role_specification: 'Role Specification',
-  company_briefing: 'Company Briefing',
-  scorecard: 'Assessment Scorecard',
-  confidential_report: 'Confidential Report',
-  interview_guide: 'Interview Guide',
-  reference_report: 'Reference Report',
-};
 
 export default function GoldenExamplesPopup({ onClose }) {
   const popupRef = useRef(null);
@@ -147,6 +141,31 @@ export default function GoldenExamplesPopup({ onClose }) {
     }
   }
 
+  // Extract bucket-relative file path from any Supabase storage URL
+  function extractStoragePath(url, bucket) {
+    if (!url) return null;
+    const regex = new RegExp(`/object/(?:public|sign)/${bucket}/([^?]+)`);
+    const match = url.match(regex);
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+
+  // Handle viewing the original file — generates a fresh signed URL to avoid 400 errors on expiry
+  async function handleViewFile(example) {
+    const filePath = extractStoragePath(example.url, 'golden-examples');
+    if (!filePath) {
+      alert('File path not available for this example.');
+      return;
+    }
+    const { data, error: signError } = await supabase.storage
+      .from('golden-examples')
+      .createSignedUrl(filePath, 3600);
+    if (signError || !data?.signedUrl) {
+      alert('Could not generate a download link. Please try again.');
+      return;
+    }
+    window.open(data.signedUrl, '_blank');
+  }
+
   // Handle viewing structure for V2 templates
   async function handleViewStructure(example) {
     try {
@@ -210,9 +229,10 @@ export default function GoldenExamplesPopup({ onClose }) {
         return;
       }
 
-      // Validate file type
-      if (!allowedTypes.includes(file.type) && 
-          !(file.name.endsWith('.md') && file.type === 'text/markdown')) {
+      // Validate file type — use extension fallback for files like .md reported as application/octet-stream
+      const allowedExtensions = ['pdf', 'doc', 'docx', 'txt', 'md', 'json', 'csv', 'html', 'jpg', 'jpeg', 'png', 'xls', 'xlsx', 'ppt', 'pptx'];
+      const fileExt = (file.name.toLowerCase().split('.').pop()) || '';
+      if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExt)) {
         setUploadError(`File type of ${file.name} (${file.type}) is not supported. Please upload only document, spreadsheet, or image files.`);
         return;
       }
@@ -339,15 +359,9 @@ export default function GoldenExamplesPopup({ onClose }) {
       setLoading(true);
       setError('');
 
-      // Set predefined example types for V2 template system
-      setExampleTypes([
-        { id: 'role_specification', name: 'Role Specification' },
-        { id: 'company_briefing', name: 'Company Briefing' },
-        { id: 'scorecard', name: 'Assessment Scorecard' },
-        { id: 'confidential_report', name: 'Confidential Report' },
-        { id: 'interview_guide', name: 'Interview Guide' },
-        { id: 'reference_report', name: 'Reference Report' },
-      ]);
+      // Load example types from DB (falls back to config.js if DB unavailable)
+      const dbTypes = await storageApi.getArtifactTypes('golden');
+      setExampleTypes(dbTypes);
 
       // Fetch templates using V2 API only
       const userId = user?.id;
@@ -389,6 +403,9 @@ export default function GoldenExamplesPopup({ onClose }) {
       console.log('Fetched templates:', templates);
 
       if (templates && Array.isArray(templates)) {
+        // Build a map from type slug to human-readable label
+        const typeMap = Object.fromEntries(dbTypes.map(t => [t.id, t.name]));
+
         const processedTemplates = templates.map(template => {
           // All templates are V2 now
           // Clean up the original file URL by removing trailing characters
@@ -400,11 +417,11 @@ export default function GoldenExamplesPopup({ onClose }) {
           if (cleanUrl.includes('/public/')) {
             cleanUrl = cleanUrl.replace('/public/', '/sign/');
           }
-          
+
           return {
             id: template.id,
             name: template.name,
-            type: EXAMPLE_TYPE_LABELS[template.document_type] || template.document_type || 'Document',
+            type: typeMap[template.document_type] || template.document_type || 'Document',
             dateAdded: new Date(template.date_added).toLocaleDateString(),
             url: cleanUrl,
             description: template.description || '',
@@ -529,7 +546,6 @@ export default function GoldenExamplesPopup({ onClose }) {
                       <th className="py-3 px-4 text-left font-medium">Name</th>
                       <th className="py-3 px-4 text-left font-medium">Type</th>
                       <th className="py-3 px-4 text-left font-medium">Date Added</th>
-                      <th className="py-3 px-4 text-left font-medium">Features</th>
                       <th className="py-3 px-4 text-left font-medium">Usage</th>
                       <th className="py-3 px-4 text-right font-medium">Actions</th>
                     </tr>
@@ -548,45 +564,24 @@ export default function GoldenExamplesPopup({ onClose }) {
                             </div>
                           </div>
                         </td>
-                        <td className="py-3 px-4 text-gray-700">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            {example.type}
-                          </span>
+                        <td className="py-3 px-4 text-gray-700 text-sm">
+                          {example.type}
                         </td>
                         <td className="py-3 px-4 text-gray-700">{example.dateAdded}</td>
-                        <td className="py-3 px-4">
-                          <div className="flex flex-col space-y-1">
-                            {example.isTemplate ? (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                ✨ Template
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                📄 Document
-                              </span>
-                            )}
-                            {example.hasVisualAnalysis && (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                👁️ Visual
-                              </span>
-                            )}
-                          </div>
-                        </td>
                         <td className="py-3 px-4 text-gray-700">
                           <span className="text-sm font-medium">{example.usageCount || 0}</span>
                           <span className="text-xs text-gray-500 ml-1">uses</span>
                         </td>
                         <td className="py-3 px-4 text-right">
                           <div className="flex space-x-3 justify-end">
-                            <a
-                              href={example.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                            <button
+                              type="button"
+                              onClick={() => handleViewFile(example)}
                               className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-100"
                               title="View file"
                             >
                               <DocumentTextIcon className="h-5 w-5" />
-                            </a>
+                            </button>
                             <button
                               onClick={() => handleViewStructure(example)}
                               className="text-green-600 hover:text-green-800 p-1 rounded hover:bg-green-100"

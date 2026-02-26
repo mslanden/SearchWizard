@@ -5,6 +5,7 @@ import DocumentTypeSelector from '../document-generation/DocumentTypeSelector';
 import UserCommentsSection from '../document-generation/UserCommentsSection';
 import GenerationActions from '../document-generation/GenerationActions';
 
+/** @param {{ onClose: () => void, projectId?: string | null }} props */
 export default function GenerateDocumentPopup({ onClose, projectId = null }) {
   const popupRef = useRef(null);
   const {

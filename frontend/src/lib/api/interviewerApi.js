@@ -29,11 +29,11 @@ export const interviewerApi = {
           throw new Error('File is required for file uploads');
         }
         
-        // Upload file to storage
+        // Upload file to storage - folder must start with user ID for storage policies
         uploadResult = await storageApi.uploadFile(
           file,
           storageBuckets.processArtifacts,
-          `interviewer_${interviewerId}`
+          `${user.id}/interviewer_${interviewerId}`
         );
       } else if (inputType === 'url') {
         if (!artifactData.sourceUrl) {
@@ -116,7 +116,14 @@ export const interviewerApi = {
         throw error;
       }
 
-      return data.map(transformDatabaseObject);
+      const types = await storageApi.getArtifactTypes('process');
+      const typeMap = Object.fromEntries(types.map(t => [t.id, t.name]));
+
+      return data.map(artifact => ({
+        ...transformDatabaseObject(artifact),
+        dateAdded: artifact.created_at,
+        type: typeMap[artifact.artifact_type] || artifact.artifact_type
+      }));
     } catch (error) {
       handleApiError(error, 'get interviewer artifacts');
     }
@@ -144,8 +151,7 @@ export const interviewerApi = {
         position: updatedData.position || updatedData.role || '',
         company: updatedData.company || '',
         email: updatedData.email || '',
-        phone: updatedData.phone || '',
-        updated_at: new Date().toISOString()
+        phone: updatedData.phone || ''
       };
 
       if (photoUrl) {

@@ -6,15 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { projectsApi } from '../../../lib/supabase';
 import { artifactApi } from '../../../lib/api';
-import CandidateAddPopup from '../../../components/popups/CandidateAddPopup';
-import InterviewerAddPopup from '../../../components/popups/InterviewerAddPopup';
-import InterviewerEditPopup from '../../../components/popups/InterviewerEditPopup';
-import GoldenExamplesPopup from '../../../components/popups/GoldenExamplesPopup';
-import GenerateDocumentPopup from '../../../components/popups/GenerateDocumentPopup';
-import ProjectHeaderEditPopup from '../../../components/popups/ProjectHeaderEditPopup';
-import UnifiedArtifactUploadPopup from '../../../components/popups/UnifiedArtifactUploadPopup';
-import CandidateEditPopup from '../../../components/popups/CandidateEditPopup';
-import HtmlDocumentViewer from '../../../components/common/HtmlDocumentViewer';
+import ProjectPopups from '../../../components/project/ProjectPopups';
 import Header from '../../../components/Header';
 import ProjectHeader from '../../../components/project/header/ProjectHeader';
 import ArtifactsSection from '../../../components/project/sections/ArtifactsSection';
@@ -22,7 +14,7 @@ import PeopleSection from '../../../components/project/sections/PeopleSection';
 import OutputsSection from '../../../components/project/sections/OutputsSection';
 
 // Import types and utilities
-import { Artifact, ArtifactUploadData, CandidateFormData, InterviewerFormData, ProjectHeaderData } from '../../../types/project';
+import { Artifact, ArtifactUploadData, Candidate, CandidateFormData, Interviewer, InterviewerFormData, ProjectHeaderData } from '../../../types/project';
 import { useProjectReducer } from '../../../hooks/useProjectReducer';
 import { useErrorHandler } from '../../../hooks/useErrorHandler';
 import { fetchProjectData, createEmptyProject, getArtifactsByCategory } from '../../../utils/projectUtils';
@@ -41,9 +33,9 @@ export default function ProjectDetail({ params }: PageProps) {
   const [viewingDocument, setViewingDocument] = useState<string | null>(null);
   const [isAddCandidateOpen, setIsAddCandidateOpen] = useState(false);
   const [isEditCandidateOpen, setIsEditCandidateOpen] = useState(false);
-  const [currentCandidate, setCurrentCandidate] = useState<any>(null);
+  const [currentCandidate, setCurrentCandidate] = useState<Candidate | null>(null);
   const [isEditInterviewerOpen, setIsEditInterviewerOpen] = useState(false);
-  const [currentInterviewer, setCurrentInterviewer] = useState<any>(null);
+  const [currentInterviewer, setCurrentInterviewer] = useState<Interviewer | null>(null);
   const [isGoldenExamplesOpen, setIsGoldenExamplesOpen] = useState(false);
   const [isGenerateDocumentOpen, setIsGenerateDocumentOpen] = useState(false);
   const [isProjectHeaderEditOpen, setIsProjectHeaderEditOpen] = useState(false);
@@ -104,7 +96,7 @@ export default function ProjectDetail({ params }: PageProps) {
   const openAddCandidate = () => setIsAddCandidateOpen(true);
   const closeAddCandidate = () => setIsAddCandidateOpen(false);
 
-  const openCandidateEdit = (candidate: any) => {
+  const openCandidateEdit = (candidate: Candidate) => {
     setCurrentCandidate(candidate);
     setIsEditCandidateOpen(true);
   };
@@ -114,7 +106,7 @@ export default function ProjectDetail({ params }: PageProps) {
     setCurrentCandidate(null);
   };
 
-  const openInterviewerEdit = (interviewer: any) => {
+  const openInterviewerEdit = (interviewer: Interviewer | null) => {
     setCurrentInterviewer(interviewer);
     setIsEditInterviewerOpen(true);
   };
@@ -136,12 +128,61 @@ export default function ProjectDetail({ params }: PageProps) {
   const openArtifactUpload = (type: 'company' | 'role') => setArtifactUploadType(type);
   const closeArtifactUpload = () => setArtifactUploadType(null);
 
+  // Handler for deleting a candidate
+  const handleDeleteCandidate = async (candidateId: string) => {
+    if (!confirm('Delete this candidate? This cannot be undone.')) return;
+    try {
+      await artifactApi.deleteCandidate(candidateId);
+      actions.deleteCandidate(candidateId);
+      closeCandidateEdit();
+      showSuccess('Candidate deleted successfully');
+    } catch (err) {
+      handleError(err as Error, 'delete candidate');
+    }
+  };
+
+  // Handler for deleting an interviewer
+  const handleDeleteInterviewer = async (interviewerId: string) => {
+    if (!confirm('Delete this interviewer? This cannot be undone.')) return;
+    try {
+      await artifactApi.deleteInterviewer(interviewerId);
+      actions.deleteInterviewer(interviewerId);
+      closeInterviewerEdit();
+      showSuccess('Interviewer deleted successfully');
+    } catch (err) {
+      handleError(err as Error, 'delete interviewer');
+    }
+  };
+
+  // Handler for saving candidate edits
+  const handleSaveCandidate = async (updatedCandidate: CandidateFormData) => {
+    if (!currentCandidate || !state.project) return;
+    try {
+      const updated = await artifactApi.updateCandidate(state.project.id, currentCandidate.id, updatedCandidate);
+      if (updated) {
+        actions.updateCandidate({
+          ...currentCandidate,
+          ...updated,
+          ...updatedCandidate,
+          photoUrl: updated.photoUrl || currentCandidate.photoUrl
+        });
+        closeCandidateEdit();
+        showSuccess('Candidate updated successfully');
+      } else {
+        throw new Error('No data returned from update operation');
+      }
+    } catch (err) {
+      handleError(err as Error, 'update candidate');
+    }
+  };
+
   // Handler for saving interviewer edits
   const handleSaveInterviewer = async (updatedData: InterviewerFormData) => {
     if (!currentInterviewer || !state.project) return;
     
     try {
       const updatedInterviewer = await artifactApi.updateInterviewer(
+        state.project.id,
         currentInterviewer.id,
         updatedData
       );
@@ -157,6 +198,23 @@ export default function ProjectDetail({ params }: PageProps) {
     } catch (err) {
       handleError(err as Error, 'update interviewer');
     }
+  };
+
+  // Callbacks for artifact count updates from edit popups
+  const handleCandidateArtifactAdded = (candidateId: string) => {
+    actions.incrementCandidateArtifactCount(candidateId);
+  };
+
+  const handleCandidateArtifactDeleted = (candidateId: string) => {
+    actions.decrementCandidateArtifactCount(candidateId);
+  };
+
+  const handleInterviewerArtifactAdded = (interviewerId: string) => {
+    actions.incrementInterviewerArtifactCount(interviewerId);
+  };
+
+  const handleInterviewerArtifactDeleted = (interviewerId: string) => {
+    actions.decrementInterviewerArtifactCount(interviewerId);
   };
 
   // Handle document deletion
@@ -211,7 +269,8 @@ export default function ProjectDetail({ params }: PageProps) {
         description: artifactData.description,
         inputType: artifactData.inputType || 'file' as const,
         sourceUrl: artifactData.sourceUrl,  // URL input
-        textContent: artifactData.textContent  // Text input
+        textContent: artifactData.textContent,  // Text input
+        artifactType: artifactData.artifactType
       };
 
       // File is passed separately as required by API
@@ -236,7 +295,7 @@ export default function ProjectDetail({ params }: PageProps) {
         const formattedArtifact: Artifact = {
           id: newArtifact.id,
           name: newArtifact.name,
-          type: newArtifact.file_type || newArtifact.fileType || 'Document',
+          type: newArtifact.type || newArtifact.document_type || 'Document',
           dateAdded: new Date(newArtifact.date_added || newArtifact.dateAdded || newArtifact.created_at).toLocaleDateString(),
           url: newArtifact.file_url || newArtifact.fileUrl || newArtifact.url,
           description: newArtifact.description,
@@ -267,7 +326,7 @@ export default function ProjectDetail({ params }: PageProps) {
           company: newCandidate.company,
           email: newCandidate.email,
           phone: newCandidate.phone,
-          photoUrl: newCandidate.photo_url || '/images/default-pfp.webp',
+          photoUrl: newCandidate.photoUrl || '/images/default-pfp.webp',
           artifacts: 0
         });
       }
@@ -293,7 +352,7 @@ export default function ProjectDetail({ params }: PageProps) {
           company: newInterviewer.company,
           email: newInterviewer.email,
           phone: newInterviewer.phone,
-          photoUrl: newInterviewer.photo_url || '/images/default-pfp.webp',
+          photoUrl: newInterviewer.photoUrl || '/images/default-pfp.webp',
           artifacts: 0
         });
       }
@@ -366,7 +425,7 @@ export default function ProjectDetail({ params }: PageProps) {
   }
 
   // Error state
-  if (hasError || !state.project) {
+  if (hasError || (!state.project && !state.loading)) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-dark-bg transition-colors">
         <Header />
@@ -382,6 +441,9 @@ export default function ProjectDetail({ params }: PageProps) {
       </div>
     );
   }
+
+  // TypeScript narrowing guard — state.project is non-null past this point
+  if (!state.project) return null;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-dark-bg transition-colors">
@@ -435,99 +497,39 @@ export default function ProjectDetail({ params }: PageProps) {
         />
       </main>
 
-      {/* Candidate Add Popup */}
-      {isAddCandidateOpen && (
-        <CandidateAddPopup 
-          onClose={closeAddCandidate} 
-          onAdd={handleAddCandidate}
-        />
-      )}
-
-      {/* Candidate Edit Popup */}
-      {isEditCandidateOpen && (
-        <CandidateEditPopup 
-          candidate={currentCandidate}
-          onClose={closeCandidateEdit} 
-          onSave={async (updatedCandidate: CandidateFormData) => {
-            if (!currentCandidate || !state.project) return;
-            
-            try {
-              const updated = await artifactApi.updateCandidate(state.project.id, currentCandidate.id, updatedCandidate);
-
-              if (updated) {
-                actions.updateCandidate({
-                  ...currentCandidate,
-                  ...updated,
-                  ...updatedCandidate,
-                  photoUrl: updated.photoUrl || currentCandidate.photoUrl
-                });
-                closeCandidateEdit();
-                showSuccess('Candidate updated successfully');
-              } else {
-                throw new Error('No data returned from update operation');
-              }
-            } catch (err) {
-              handleError(err as Error, 'update candidate');
-            }
-          }}
-        />
-      )}
-
-      {/* Interviewer Add/Edit Popup */}
-      {isEditInterviewerOpen && (
-        currentInterviewer ? (
-          <InterviewerEditPopup 
-            interviewer={currentInterviewer}
-            onClose={closeInterviewerEdit} 
-            onSave={handleSaveInterviewer}
-          />
-        ) : (
-          <InterviewerAddPopup 
-            onClose={closeInterviewerEdit} 
-            onAdd={handleAddInterviewer}
-          />
-        )
-      )}
-
-      {/* Golden Examples Popup */}
-      {isGoldenExamplesOpen && (
-        <GoldenExamplesPopup onClose={closeGoldenExamples} />
-      )}
-
-      {/* Generate Document Popup */}
-      {isGenerateDocumentOpen && (
-        <GenerateDocumentPopup 
-          onClose={closeGenerateDocument} 
-          projectId={state.project?.id as any} 
-        />
-      )}
-
-      {/* Project Header Edit Popup */}
-      {isProjectHeaderEditOpen && (
-        <ProjectHeaderEditPopup 
-          project={state.project}
-          onClose={closeProjectHeaderEdit}
-          onSave={saveProjectHeaderEdit}
-        />
-      )}
-
-      {/* Artifact Upload Popup */}
-      {artifactUploadType && (
-        <UnifiedArtifactUploadPopup 
-          isOpen={!!artifactUploadType}
-          type={artifactUploadType}
-          onClose={closeArtifactUpload}
-          onUpload={handleArtifactUpload}
-        />
-      )}
-
-      {/* HTML Document Viewer */}
-      {viewingDocument && (
-        <HtmlDocumentViewer 
-          url={viewingDocument}
-          onClose={() => setViewingDocument(null)}
-        />
-      )}
+      <ProjectPopups
+        project={state.project}
+        currentCandidate={currentCandidate}
+        currentInterviewer={currentInterviewer}
+        isAddCandidateOpen={isAddCandidateOpen}
+        isEditCandidateOpen={isEditCandidateOpen}
+        isEditInterviewerOpen={isEditInterviewerOpen}
+        isGoldenExamplesOpen={isGoldenExamplesOpen}
+        isGenerateDocumentOpen={isGenerateDocumentOpen}
+        isProjectHeaderEditOpen={isProjectHeaderEditOpen}
+        artifactUploadType={artifactUploadType}
+        viewingDocument={viewingDocument}
+        onCloseAddCandidate={closeAddCandidate}
+        onAddCandidate={handleAddCandidate}
+        onCloseCandidateEdit={closeCandidateEdit}
+        onSaveCandidate={handleSaveCandidate}
+        onDeleteCandidate={handleDeleteCandidate}
+        onCloseInterviewerEdit={closeInterviewerEdit}
+        onSaveInterviewer={handleSaveInterviewer}
+        onDeleteInterviewer={handleDeleteInterviewer}
+        onAddInterviewer={handleAddInterviewer}
+        onCloseGoldenExamples={closeGoldenExamples}
+        onCloseGenerateDocument={closeGenerateDocument}
+        onCloseProjectHeaderEdit={closeProjectHeaderEdit}
+        onSaveProjectHeader={saveProjectHeaderEdit}
+        onCloseArtifactUpload={closeArtifactUpload}
+        onArtifactUpload={handleArtifactUpload}
+        onSetViewingDocument={setViewingDocument}
+        onCandidateArtifactAdded={handleCandidateArtifactAdded}
+        onCandidateArtifactDeleted={handleCandidateArtifactDeleted}
+        onInterviewerArtifactAdded={handleInterviewerArtifactAdded}
+        onInterviewerArtifactDeleted={handleInterviewerArtifactDeleted}
+      />
     </div>
   );
 }

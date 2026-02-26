@@ -86,7 +86,7 @@ export interface ProjectState {
 }
 
 export interface ProjectAction {
-  type: 'SET_PROJECT' | 'SET_LOADING' | 'SET_ERROR' | 'ADD_ARTIFACT' | 'ADD_CANDIDATE' | 'UPDATE_CANDIDATE' | 'ADD_INTERVIEWER' | 'UPDATE_INTERVIEWER' | 'DELETE_ARTIFACT' | 'DELETE_OUTPUT' | 'TOGGLE_OUTPUT_SELECTION' | 'SET_DELETING_DOCUMENT';
+  type: 'SET_PROJECT' | 'SET_LOADING' | 'SET_ERROR' | 'ADD_ARTIFACT' | 'ADD_CANDIDATE' | 'UPDATE_CANDIDATE' | 'DELETE_CANDIDATE' | 'ADD_INTERVIEWER' | 'UPDATE_INTERVIEWER' | 'DELETE_INTERVIEWER' | 'DELETE_ARTIFACT' | 'DELETE_OUTPUT' | 'TOGGLE_OUTPUT_SELECTION' | 'SET_DELETING_DOCUMENT' | 'INCREMENT_CANDIDATE_ARTIFACT_COUNT' | 'DECREMENT_CANDIDATE_ARTIFACT_COUNT' | 'INCREMENT_INTERVIEWER_ARTIFACT_COUNT' | 'DECREMENT_INTERVIEWER_ARTIFACT_COUNT';
   payload?: any;
 }
 
@@ -97,6 +97,7 @@ export interface ArtifactUploadData {
   file?: File;
   sourceUrl?: string;  // Standardized field name for external URLs
   textContent?: string;
+  artifactType?: string;
 }
 
 export interface CandidateFormData {

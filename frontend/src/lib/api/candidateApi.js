@@ -182,7 +182,14 @@ export const candidateApi = {
         throw error;
       }
 
-      return data.map(transformDatabaseObject);
+      const types = await storageApi.getArtifactTypes('candidate');
+      const typeMap = Object.fromEntries(types.map(t => [t.id, t.name]));
+
+      return data.map(artifact => ({
+        ...transformDatabaseObject(artifact),
+        dateAdded: artifact.created_at,
+        type: typeMap[artifact.artifact_type] || artifact.artifact_type
+      }));
     } catch (error) {
       handleApiError(error, 'get candidate artifacts');
     }

@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
-import { XMarkIcon, UserCircleIcon, DocumentIcon, LinkIcon, DocumentTextIcon, PlusIcon, PencilIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, UserCircleIcon, DocumentIcon, LinkIcon, DocumentTextIcon, PlusIcon, PencilIcon } from '@heroicons/react/24/outline';
 import { artifactApi } from '../../lib/api';
-import EnhancedProcessArtifactUploadPopup from './EnhancedProcessArtifactUploadPopup';
+import EnhancedArtifactUploadPopup from './EnhancedArtifactUploadPopup';
+import { interviewerApi } from '../../lib/api';
 
-export default function InterviewerEditPopup({ interviewer, onClose, onSave }) {
+export default function InterviewerEditPopup({ interviewer, onClose, onSave, onDelete, onArtifactAdded, onArtifactDeleted }) {
   const popupRef = useRef(null);
   const [name, setName] = useState('');
   const [position, setPosition] = useState('');
@@ -20,7 +21,6 @@ export default function InterviewerEditPopup({ interviewer, onClose, onSave }) {
   const [artifactTypes, setArtifactTypes] = useState([]);
   const [isEditProfile, setIsEditProfile] = useState(false);
   const [showUploadPopup, setShowUploadPopup] = useState(false);
-  const [selectedArtifactType, setSelectedArtifactType] = useState(null);
 
   useEffect(() => {
     if (interviewer) {
@@ -40,7 +40,7 @@ export default function InterviewerEditPopup({ interviewer, onClose, onSave }) {
       setPhone('');
       setPreviewUrl('/images/default-pfp.webp');
     }
-  }, [interviewer, loadArtifacts]);
+  }, [interviewer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadArtifacts = async () => {
     if (!interviewer || !interviewer.id) return;
@@ -51,11 +51,11 @@ export default function InterviewerEditPopup({ interviewer, onClose, onSave }) {
         id: artifact.id,
         name: artifact.name,
         description: artifact.description || '',
-        artifactType: artifact.artifact_type || 'other',
-        dateAdded: artifact.date_added || artifact.created_at || new Date().toISOString(),
-        fileUrl: artifact.file_url || artifact.url || '',
-        fileType: artifact.file_type || '',
-        fileSize: artifact.file_size || artifact.size || 0
+        artifactType: artifact.artifact_type || artifact.artifactType || 'other',
+        dateAdded: artifact.dateAdded || artifact.date_added || artifact.created_at || new Date().toISOString(),
+        fileUrl: artifact.fileUrl || artifact.file_url || artifact.url || '',
+        fileType: artifact.fileType || artifact.file_type || '',
+        fileSize: artifact.fileSize || artifact.file_size || artifact.size || 0
       }));
       setArtifacts(formattedArtifacts);
     } catch (err) {
@@ -69,9 +69,6 @@ export default function InterviewerEditPopup({ interviewer, onClose, onSave }) {
     try {
       const types = await artifactApi.getArtifactTypes('process');
       setArtifactTypes(types);
-      if (types && types.length > 0) {
-        setSelectedArtifactType(types[0].id);
-      }
     } catch (err) {
       // Failed to load artifact types - continue with empty array
     }
@@ -111,67 +108,47 @@ export default function InterviewerEditPopup({ interviewer, onClose, onSave }) {
     }
   };
 
-  const handleUploadArtifact = () => {
-    setShowUploadPopup(true);
-  };
-
-  const handleArtifactUploaded = async (artifactData) => {
-    try {
-
-      if (!artifactData.file) {
-        setError('No file selected. Please select a file to upload.');
-        return;
-      }
-      const uploadedArtifact = await artifactApi.addProcessArtifact(
-        interviewer.id,
-        {
-          name: artifactData.name,
-          description: artifactData.description,
-          artifactType: artifactData.artifactType
-        },
-        artifactData.file
-      );
-      if (!uploadedArtifact) {
-        setError('Upload failed - no data returned');
-        return;
-      }
-
-      const formattedArtifact = {
-        id: uploadedArtifact.id,
-        name: uploadedArtifact.name,
-        description: uploadedArtifact.description || '',
-        artifactType: uploadedArtifact.artifact_type || 'other',
-        dateAdded: uploadedArtifact.date_added || uploadedArtifact.created_at || new Date().toISOString(),
-        fileUrl: uploadedArtifact.file_url || '',
-        fileType: uploadedArtifact.file_type || '',
-        fileSize: uploadedArtifact.file_size || 0
-      };
-      const missingFields = [];
-      Object.keys(formattedArtifact).forEach(key => {
-        if (formattedArtifact[key] === undefined) {
-
-          missingFields.push(key);
-          if (key === 'artifactType') formattedArtifact[key] = 'other';
-          else if (key === 'description') formattedArtifact[key] = '';
-          else if (key === 'fileUrl') formattedArtifact[key] = '';
-          else if (key === 'fileType') formattedArtifact[key] = '';
-          else if (key === 'fileSize') formattedArtifact[key] = 0;
-        }
-      });
-      // Handle missing fields gracefully
-
-      setArtifacts(prev => [formattedArtifact, ...prev]);
-      setShowUploadPopup(false);
-    } catch (err) {
-      const errorMessage = err?.message || (typeof err === 'object' ? JSON.stringify(err) : 'Unknown error');
-      setError(`Failed to upload artifact: ${errorMessage}`);
+  const handleArtifactUploaded = (uploadedArtifact) => {
+    if (!uploadedArtifact) {
+      setError('Upload failed - no data returned');
+      return;
     }
+
+    const formattedArtifact = {
+      id: uploadedArtifact.id,
+      name: uploadedArtifact.name,
+      description: uploadedArtifact.description || '',
+      artifactType: uploadedArtifact.artifactType || 'other',
+      dateAdded: uploadedArtifact.createdAt || new Date().toISOString(),
+      fileUrl: uploadedArtifact.fileUrl || '',
+      fileType: uploadedArtifact.fileType || '',
+      fileSize: uploadedArtifact.fileSize || 0
+    };
+
+    setArtifacts(prev => [formattedArtifact, ...prev]);
+    setError('');
+    setShowUploadPopup(false);
   };
 
   const handleChangeArtifactType = (artifactId, newType) => {
-    setArtifacts(artifacts.map(a => 
+    setArtifacts(artifacts.map(a =>
       a.id === artifactId ? { ...a, artifactType: newType } : a
     ));
+  };
+
+  const handleInterviewerArtifactUpload = async (uploadPayload) => {
+    const artifactData = {
+      name: uploadPayload.name,
+      description: uploadPayload.description,
+      artifactType: uploadPayload.artifactType,
+      inputType: uploadPayload.inputType,
+      ...(uploadPayload.inputType === 'url' ? { sourceUrl: uploadPayload.sourceUrl } : {}),
+      ...(uploadPayload.inputType === 'text' ? { textContent: uploadPayload.textContent } : {}),
+    };
+    const result = await interviewerApi.addProcessArtifact(interviewer.id, artifactData, uploadPayload.file || null);
+    await handleArtifactUploaded(result);
+    if (result && onArtifactAdded) onArtifactAdded(interviewer.id);
+    return result;
   };
 
   const getArtifactIcon = (typeName) => {
@@ -195,16 +172,16 @@ export default function InterviewerEditPopup({ interviewer, onClose, onSave }) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-[#F0F7FF] rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <div ref={popupRef} className="bg-[#F0F7FF] rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         {/* Combined Header with Profile Information */}
         <div className="flex items-start p-6">
           <div className="relative mr-6">
             <div className="w-24 h-24 rounded-full overflow-hidden">
-              <Image 
-                src={previewUrl || '/images/default-pfp.webp'} 
+              <Image
+                src={previewUrl || '/images/default-pfp.webp'}
                 alt={name || 'Interviewer'}
-                width={96} 
-                height={96} 
+                width={96}
+                height={96}
                 style={{ objectFit: 'cover', width: '100%', height: 'auto' }}
                 className="rounded-full"
                 onError={(e) => { e.target.src = '/images/default-pfp.webp'; }}
@@ -212,9 +189,9 @@ export default function InterviewerEditPopup({ interviewer, onClose, onSave }) {
             </div>
             {isEditProfile && (
               <label className="absolute bottom-0 right-0 bg-gray-100 rounded-full p-2 cursor-pointer hover:bg-gray-200 border border-white">
-                <input 
-                  type="file" 
-                  className="hidden" 
+                <input
+                  type="file"
+                  className="hidden"
                   onChange={handleFileChange}
                   accept="image/*"
                 />
@@ -242,14 +219,14 @@ export default function InterviewerEditPopup({ interviewer, onClose, onSave }) {
                     )}
                   </div>
                   <div className="flex">
-                    <button 
+                    <button
                       onClick={() => setIsEditProfile(true)}
                       className="p-2 rounded-full hover:bg-gray-200 h-10 mr-2"
                     >
                       <PencilIcon className="w-5 h-5 text-gray-600" />
                     </button>
-                    <button 
-                      onClick={onClose} 
+                    <button
+                      onClick={onClose}
                       className="p-2 rounded-full hover:bg-gray-200 h-10"
                     >
                       <XMarkIcon className="w-5 h-5 text-gray-600" />
@@ -262,8 +239,8 @@ export default function InterviewerEditPopup({ interviewer, onClose, onSave }) {
               <div>
                 <div className="flex justify-between mb-4">
                   <h2 className="text-xl font-semibold text-gray-800">Edit Interviewer Profile</h2>
-                  <button 
-                    onClick={onClose} 
+                  <button
+                    onClick={onClose}
                     className="p-1 rounded-full hover:bg-gray-200"
                   >
                     <XMarkIcon className="w-5 h-5 text-gray-600" />
@@ -361,96 +338,107 @@ export default function InterviewerEditPopup({ interviewer, onClose, onSave }) {
                 </button>
               </div>
             </form>
-          ) : null}
+          ) : (
+            /* Artifacts Section — only shown in display mode, not during profile edit */
+            <div className="px-6 pb-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-medium text-gray-900">Interviewer Artifacts</h3>
+                <button
+                  className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1.5 rounded-md flex items-center text-sm"
+                  onClick={() => setShowUploadPopup(true)}
+                >
+                  <PlusIcon className="w-4 h-4 mr-1" />
+                  Add Artifact
+                </button>
+              </div>
+              <div className="bg-white rounded-lg overflow-hidden shadow-sm">
+                <table className="w-full">
+                  <thead className="text-xs text-gray-500 uppercase bg-[#F5F5F5]">
+                    <tr>
+                      <th className="py-2 px-4 text-left font-medium">Artifact</th>
+                      <th className="py-2 px-4 text-left font-medium">Type</th>
+                      <th className="py-2 px-4 text-left font-medium">Date Added</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {isLoadingArtifacts ? (
+                      <tr>
+                        <td colSpan="3" className="text-center py-4 text-gray-500">Loading artifacts...</td>
+                      </tr>
+                    ) : artifacts.length === 0 ? (
+                      <tr>
+                        <td colSpan="3" className="text-center py-4 text-gray-500">No artifacts added yet</td>
+                      </tr>
+                    ) : (
+                      artifacts.map(artifact => (
+                        <tr key={artifact.id} className="hover:bg-gray-50">
+                          <td className="py-2 px-4">
+                            <div className="flex items-center">
+                              {getArtifactIcon(artifactTypes.find(t => t.id === artifact.artifactType)?.name)}
+                              <span className="ml-2 text-sm text-gray-800">
+                                {artifact.name}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-2 px-4">
+                            <select
+                              value={artifact.artifactType}
+                              onChange={(e) => handleChangeArtifactType(artifact.id, e.target.value)}
+                              className="bg-white border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none"
+                              style={{
+                                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
+                                backgroundPosition: 'right 0.5rem center',
+                                backgroundSize: '1.5em 1.5em',
+                                backgroundRepeat: 'no-repeat'
+                              }}
+                            >
+                              {artifactTypes.map(type => (
+                                <option key={type.id} value={type.id}>{type.name}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="py-2 px-4 text-gray-600 text-sm">
+                            {formatDate(artifact.dateAdded)}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
-          {/* Artifacts Section */}
-          <div className="px-6 pb-6">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-medium text-gray-900">Interviewer Artifacts</h3>
-              <button 
-                className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1.5 rounded-md flex items-center text-sm"
-                onClick={handleUploadArtifact}
+          {/* Footer */}
+          <div className="flex justify-between items-center px-6 pb-6 mt-2">
+            {onDelete && (
+              <button
+                type="button"
+                onClick={() => onDelete(interviewer?.id)}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md"
               >
-                <PlusIcon className="w-4 h-4 mr-1" />
-                Add Artifact
+                Delete Profile
+              </button>
+            )}
+            <div className={`flex space-x-3 ${onDelete ? '' : 'ml-auto'}`}>
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100"
+              >
+                Close
               </button>
             </div>
-            <div className="bg-white rounded-lg overflow-hidden shadow-sm">
-              <table className="w-full">
-                <thead className="text-xs text-gray-500 uppercase bg-[#F5F5F5]">
-                  <tr>
-                    <th className="py-2 px-4 text-left font-medium">Artifact</th>
-                    <th className="py-2 px-4 text-left font-medium">Type</th>
-                    <th className="py-2 px-4 text-left font-medium">Date Added</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {isLoadingArtifacts ? (
-                    <tr>
-                      <td colSpan="3" className="text-center py-4 text-gray-500">Loading artifacts...</td>
-                    </tr>
-                  ) : artifacts.length === 0 ? (
-                    <tr>
-                      <td colSpan="3" className="text-center py-4 text-gray-500">No artifacts added yet</td>
-                    </tr>
-                  ) : (
-                    artifacts.map(artifact => (
-                      <tr key={artifact.id} className="hover:bg-gray-50">
-                        <td className="py-2 px-4">
-                          <div className="flex items-center">
-                            {getArtifactIcon(artifactTypes.find(t => t.id === artifact.artifactType)?.name)}
-                            <span className={`ml-2 text-sm ${artifactTypes.find(t => t.id === artifact.artifactType)?.name === 'linkedin profile' ? 'text-blue-600' : 'text-gray-800'}`}>
-                              {artifact.name}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="py-2 px-4">
-                          <select 
-                            value={artifact.artifactType} 
-                            onChange={(e) => handleChangeArtifactType(artifact.id, e.target.value)}
-                            className="bg-white border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none"
-                            style={{ 
-                              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`, 
-                              backgroundPosition: 'right 0.5rem center', 
-                              backgroundSize: '1.5em 1.5em', 
-                              backgroundRepeat: 'no-repeat' 
-                            }}
-                          >
-                            {artifactTypes.map(type => (
-                              <option key={type.id} value={type.id}>{type.name}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="py-2 px-4 text-gray-600 text-sm">
-                          {formatDate(artifact.dateAdded)}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="flex justify-end space-x-3 mt-0 px-6 pb-6">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100"
-            >
-              Close
-            </button>
           </div>
         </div>
       </div>
 
       {/* Artifact Upload Popup */}
-      {showUploadPopup && (
-        <EnhancedProcessArtifactUploadPopup
-          interviewerId={interviewer.id}
-          interviewerName={interviewer.name}
+      {showUploadPopup && interviewer && (
+        <EnhancedArtifactUploadPopup
+          type="process"
           onClose={() => setShowUploadPopup(false)}
-          onSuccess={handleArtifactUploaded}
+          onUpload={handleInterviewerArtifactUpload}
         />
       )}
     </div>

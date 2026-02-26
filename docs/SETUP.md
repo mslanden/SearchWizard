@@ -111,12 +111,18 @@ uvicorn api:app --host 0.0.0.0 --port 8000
 The app requires the following Supabase setup:
 
 ### Tables
-- `projects` — project records (user_id, title, client, date, description, background_color, artifact_count)
-- `artifacts` — uploaded artifacts linked to projects
-- `candidates` — candidate profiles
-- `interviewers` — interviewer profiles
-- `project_outputs` — generated document metadata
-- `user_roles` — user role and approval status (user_id, role, is_approved)
+
+| Table | Description | Key Columns |
+|-------|-------------|-------------|
+| `projects` | Project records | `user_id`, `title`, `client`, `date`, `description`, `background_color`, `artifact_count` |
+| `artifacts` | Company and role artifacts linked to projects | `project_id`, `artifact_type` (`'company'`/`'role'`), `document_type` (specific type slug), `input_type`, `name`, `file_url`, `file_path`, `source_url`, `processed_content` |
+| `candidate_artifacts` | Artifacts linked to candidates | `candidate_id`, `artifact_type` (slug), `input_type`, `name`, `file_url`, `file_path`, `source_url`, `processed_content`, `file_type`, `file_size` |
+| `process_artifacts` | Artifacts linked to interviewers | `interviewer_id`, `artifact_type` (slug), `input_type`, `name`, `file_url`, `file_path`, `source_url`, `processed_content`, `file_type`, `file_size` |
+| `candidates` | Candidate profiles | `project_id`, `name`, `role`, `company`, `email`, `phone`, `photo_url`, `artifacts_count` |
+| `interviewers` | Interviewer profiles | `project_id`, `name`, `position`, `company`, `email`, `phone`, `photo_url`, `artifacts_count` |
+| `project_outputs` | Generated document metadata | `project_id`, `name`, `output_type`, `file_url`, `file_path` |
+| `user_roles` | User role and approval status | `user_id`, `role`, `is_active` |
+| `artifact_types` | Admin-configurable artifact type options | `id` (TEXT slug, PK), `category`, `name`, `sort_order`, `is_active` |
 
 ### Stored Procedures (required for auth)
 - `get_user_status_for_auth(user_id)` — returns user role and approval status
@@ -127,12 +133,86 @@ The app requires the following Supabase setup:
 - `role-artifacts`
 - `candidate-artifacts`
 - `process-artifacts`
+- `candidate-photos`
+- `interviewer-photos`
 - `project-outputs`
 - `golden-examples`
 
 ### RLS Policies
 Projects and artifacts are filtered by `user_id`. Ensure RLS is enabled and
 policies restrict each user to their own data.
+
+The `artifact_types` table requires:
+- RLS enabled
+- `SELECT` policy: `USING (true)` — all authenticated users can read types
+- `ALL` policy for service role — admin API uses service role key for writes
+
+### Schema Migration History
+
+The following migrations have been applied to the shared Supabase project (Feb 2026).
+When separating staging and production Supabase projects, these must be applied to both.
+
+```sql
+-- 1. Add document_type to artifacts (stores specific type slug for company/role artifacts)
+ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS document_type TEXT;
+
+-- 2. Create artifact_types table (DB-driven type dropdown options)
+CREATE TABLE IF NOT EXISTS artifact_types (
+  id          TEXT PRIMARY KEY,
+  category    TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  description TEXT,
+  sort_order  INTEGER DEFAULT 0,
+  is_active   BOOLEAN DEFAULT true,
+  created_at  TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE artifact_types ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Anyone can read artifact types" ON artifact_types FOR SELECT USING (true);
+CREATE POLICY "Service role can manage artifact types" ON artifact_types FOR ALL USING (true);
+
+-- 3. Add missing columns to candidate_artifacts
+ALTER TABLE candidate_artifacts ADD COLUMN IF NOT EXISTS artifact_type TEXT;
+ALTER TABLE candidate_artifacts ADD COLUMN IF NOT EXISTS input_type TEXT DEFAULT 'file';
+ALTER TABLE candidate_artifacts ADD COLUMN IF NOT EXISTS source_url TEXT;
+ALTER TABLE candidate_artifacts ADD COLUMN IF NOT EXISTS processed_content TEXT;
+ALTER TABLE candidate_artifacts ADD COLUMN IF NOT EXISTS file_type TEXT;
+ALTER TABLE candidate_artifacts ADD COLUMN IF NOT EXISTS file_size BIGINT;
+
+-- 4. Add missing columns to process_artifacts
+ALTER TABLE process_artifacts ADD COLUMN IF NOT EXISTS artifact_type TEXT;
+ALTER TABLE process_artifacts ADD COLUMN IF NOT EXISTS input_type TEXT DEFAULT 'file';
+ALTER TABLE process_artifacts ADD COLUMN IF NOT EXISTS source_url TEXT;
+ALTER TABLE process_artifacts ADD COLUMN IF NOT EXISTS processed_content TEXT;
+ALTER TABLE process_artifacts ADD COLUMN IF NOT EXISTS file_type TEXT;
+ALTER TABLE process_artifacts ADD COLUMN IF NOT EXISTS file_size BIGINT;
+
+-- 5. Add artifacts_count to candidates and interviewers
+ALTER TABLE candidates ADD COLUMN IF NOT EXISTS artifacts_count INTEGER DEFAULT 0;
+ALTER TABLE interviewers ADD COLUMN IF NOT EXISTS artifacts_count INTEGER DEFAULT 0;
+
+-- 6. RLS policies for process_artifacts (fixes interviewer artifact upload failure)
+-- NOTE: user_id column is UUID type — no cast needed.
+-- If this migration has been run before, conflicting policies may still exist.
+-- Always drop ALL existing policies before recreating them:
+DROP POLICY IF EXISTS "Users can insert own process artifacts" ON process_artifacts;
+DROP POLICY IF EXISTS "Users can view own process artifacts" ON process_artifacts;
+DROP POLICY IF EXISTS "Users can delete own process artifacts" ON process_artifacts;
+-- Also run: SELECT policyname FROM pg_policies WHERE tablename = 'process_artifacts';
+-- and drop any additional policies not listed above, then run:
+CREATE POLICY "Users can insert own process artifacts"
+  ON process_artifacts FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can view own process artifacts"
+  ON process_artifacts FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own process artifacts"
+  ON process_artifacts FOR DELETE
+  USING (auth.uid() = user_id);
+
+ALTER TABLE process_artifacts ENABLE ROW LEVEL SECURITY;
+```
 
 ---
 
