@@ -199,6 +199,7 @@ Supabase
 | 26 | "Edit Candidate Profile" and "Edit Interviewer Profile" popups redundantly show artifacts table | Fixed in `133bd78` (re-fixed regression in `b445ce2`) | Removed artifacts section from the edit form view only (`isEditProfile = true`); artifacts table + Add Artifact button remain visible in display view (`isEditProfile = false`); initial fix over-removed and broke the display view |
 | 27 | "Error Loading Project" briefly flashes when opening a project from My Projects | Fixed in `133bd78` | Changed error guard to `if (hasError \|\| (!state.project && !state.loading))` so loading state takes precedence; added TS narrowing guard `if (!state.project) return null` after |
 | 28 | Golden Examples table: TYPE shown as colored bubble; FEATURES column has no value | Fixed in `133bd78` | Removed `rounded-full` badge styling from TYPE column (now plain text); removed FEATURES `<th>` and `<td>` from `GoldenExamplesPopup.jsx` |
+| 29 | Saving an edited Interviewer profile crashes with "Error Loading Project" — "Could not find the 'updated_at' column of 'interviewers' in the schema cache" | Open | The `updateInterviewer` API call references `updated_at` which does not exist on the `interviewers` table. PostgREST rejects the request; the error propagates to `handleError` which sets the project error state, collapsing the page. Fix requires either: (a) `ALTER TABLE interviewers ADD COLUMN updated_at TIMESTAMPTZ DEFAULT now()` in Supabase, or (b) removing the `updated_at` reference from the update/select query in `interviewerApi.js` |
 
 ---
 
