@@ -192,10 +192,13 @@ ALTER TABLE interviewers ADD COLUMN IF NOT EXISTS artifacts_count INTEGER DEFAUL
 
 -- 6. RLS policies for process_artifacts (fixes interviewer artifact upload failure)
 -- NOTE: user_id column is UUID type — no cast needed.
--- If policies already exist from a prior run, drop them first:
--- DROP POLICY IF EXISTS "Users can insert own process artifacts" ON process_artifacts;
--- DROP POLICY IF EXISTS "Users can view own process artifacts" ON process_artifacts;
--- DROP POLICY IF EXISTS "Users can delete own process artifacts" ON process_artifacts;
+-- If this migration has been run before, conflicting policies may still exist.
+-- Always drop ALL existing policies before recreating them:
+DROP POLICY IF EXISTS "Users can insert own process artifacts" ON process_artifacts;
+DROP POLICY IF EXISTS "Users can view own process artifacts" ON process_artifacts;
+DROP POLICY IF EXISTS "Users can delete own process artifacts" ON process_artifacts;
+-- Also run: SELECT policyname FROM pg_policies WHERE tablename = 'process_artifacts';
+-- and drop any additional policies not listed above, then run:
 CREATE POLICY "Users can insert own process artifacts"
   ON process_artifacts FOR INSERT
   WITH CHECK (auth.uid() = user_id);
@@ -207,6 +210,8 @@ CREATE POLICY "Users can view own process artifacts"
 CREATE POLICY "Users can delete own process artifacts"
   ON process_artifacts FOR DELETE
   USING (auth.uid() = user_id);
+
+ALTER TABLE process_artifacts ENABLE ROW LEVEL SECURITY;
 ```
 
 ---
