@@ -29,11 +29,11 @@ export const interviewerApi = {
           throw new Error('File is required for file uploads');
         }
         
-        // Upload file to storage
+        // Upload file to storage - folder must start with user ID for storage policies
         uploadResult = await storageApi.uploadFile(
           file,
           storageBuckets.processArtifacts,
-          `interviewer_${interviewerId}`
+          `${user.id}/interviewer_${interviewerId}`
         );
       } else if (inputType === 'url') {
         if (!artifactData.sourceUrl) {
