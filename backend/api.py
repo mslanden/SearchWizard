@@ -820,7 +820,7 @@ async def _backfill_all_embeddings(supabase) -> None:
 
 @app.post("/api/brain/generate-embeddings")
 async def backfill_embeddings(
-    user_id: str = Body(...),
+    user_id: str = Body(..., embed=True),
     background_tasks: BackgroundTasks = None,
 ):
     """
