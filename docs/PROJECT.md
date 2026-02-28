@@ -172,6 +172,7 @@ Supabase
 8. Populate knowledge base files with real Agentica AI content
 9. Remove `WriterAgent` file (`backend/agents/writer_agent.py`) — no longer imported
 10. Centralise the Claude model string into `ANTHROPIC_MODEL` constant or env var
+11. **Download output documents** — add a Download button to the Outputs section / `HtmlDocumentViewer` so users can save generated documents locally (e.g. as HTML or PDF). Currently documents can only be viewed inline.
 
 ### Open Bug Log (Staging — Feb 2026)
 
