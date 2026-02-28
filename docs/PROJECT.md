@@ -43,10 +43,17 @@ Next.js Frontend (Vercel)
     ▼
 FastAPI Backend (Railway)
     │  Document generation pipeline (V2 — direct Claude API call)
-    │  Golden example analysis pipeline
+    │  Golden example analysis pipeline (V3 — multi-stage async blueprint pipeline)
     │  File parsing pipeline
     │
-    ├── StructureAgent  →  analyzes uploaded golden examples → template_prompt + visual_data
+    ├── pipeline/             (V3 blueprint pipeline — see Data Flow V3 below)
+    │   ├── preprocessor.py   →  Stage A: file bytes → Intermediate Document Model (IDM)
+    │   ├── semantic_analyzer.py  →  Stage B: IDM → ContentStructureSpec (Claude tool use)
+    │   ├── layout_analyzer.py    →  Stage C: IDM → LayoutSpec (algorithmic + Claude fallback)
+    │   ├── visual_style_analyzer.py  →  Stage D: IDM → VisualStyleSpec (PyMuPDF + Claude Vision)
+    │   ├── blueprint_assembler.py    →  Stage E: merge B+C+D → JSONBlueprint
+    │   └── pipeline_runner.py        →  orchestrator (asyncio.gather for B/C/D concurrency)
+    ├── StructureAgent  →  analyzes uploaded golden examples → template_prompt + visual_data (V2, kept)
     ├── ImageAnalyzer   →  extracts images/layout from PDF golden examples
     ├── DocumentParser  →  LlamaParse premium → fast → PyMuPDF → fallback
     ├── CacheService    →  Redis (optional) / in-memory fallback
@@ -83,7 +90,7 @@ Supabase
 6. Frontend saves HTML to Supabase `project-outputs` bucket and inserts metadata row
 7. Output appears in the project's Outputs section; viewed inline via `HtmlDocumentViewer`
 
-### Data Flow — Golden Example Upload
+### Data Flow — Golden Example Upload (V2 — legacy, kept for backward compat)
 
 1. User uploads a file via the Golden Examples popup
 2. Backend stores the file in the `golden-examples` Supabase storage bucket
@@ -93,6 +100,30 @@ Supabase
 5. A second Claude call uses that text to produce `template_prompt`
    (a structured instruction block that guides later document generation)
 6. `template_prompt` and `visual_data` are stored in the `golden_examples` DB row
+
+### Data Flow — Blueprint Pipeline (V3)
+
+V3 replaces the single-pass analysis with an async multi-stage pipeline that produces
+a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB column.
+
+1. User uploads a file via the Golden Examples popup
+2. Frontend POSTs to `POST /api/templates/v3` (multipart form)
+3. Backend: stores file in `golden-examples` bucket, inserts a DB record with
+   `status='processing'`, dispatches `run_pipeline_and_store` as a FastAPI `BackgroundTask`
+4. Backend returns **HTTP 202** immediately: `{"template_id": "...", "status": "processing"}`
+5. Frontend starts polling `GET /api/templates/{id}/status` every **4 seconds**
+6. In the background the five pipeline stages run:
+   - **Stage A** (sync): `preprocessor.py` → `build_idm()` converts file bytes to the
+     Intermediate Document Model (IDM) — page blocks, span-level style metadata, bboxes
+   - **Stages B, C, D** (concurrent via `asyncio.gather`):
+     - B `semantic_analyzer.py` → `ContentStructureSpec` (sections, intents, rhetorical patterns) via Claude tool use
+     - C `layout_analyzer.py` → `LayoutSpec` (margins, columns, spacing — algorithmic for PDFs, Claude fallback for DOCX)
+     - D `visual_style_analyzer.py` → `VisualStyleSpec` (typography tokens, colour palette — IDM metadata + Claude Vision on rendered PNG pages)
+   - **Stage E** (sync): `blueprint_assembler.py` merges B+C+D → `JSONBlueprint`
+7. On success: `blueprint` JSONB and `status='ready'` written to DB
+8. On failure: `status='error'` + `processing_error` written; frontend shows error badge
+9. Frontend poll detects `status='ready'`, refreshes list, shows BlueprintViewer (3-tab: Content Structure / Layout / Visual Style)
+10. Document generation prefers `blueprint` when present; falls back to `template_prompt` + `visual_data` for old records
 
 ### Frontend Route Map
 
@@ -165,13 +196,16 @@ Supabase
 1. ✅ Staging environment setup (completed Feb 2026)
 2. ✅ Artifact type system — DB-driven dropdowns for all artifact categories (Feb 2026)
 3. ✅ Code review cleanup — dead code deleted, constants extracted, components consolidated (Feb 2026, commit `86f4227`)
-4. Review and act on the open CVE security patch PR
-5. Make and test significant UI/feature changes on `staging` before pushing to `main`
-6. Fix Bug #22 (Generate New Document dropdown lists file names instead of types) — requires scoping before fixing
-7. Separate Supabase projects (staging vs production) — **required before public launch**
-8. Populate knowledge base files with real Agentica AI content
-9. Remove `WriterAgent` file (`backend/agents/writer_agent.py`) — no longer imported
-10. Centralise the Claude model string into `ANTHROPIC_MODEL` constant or env var
+4. ✅ Document DNA Blueprint Pipeline (V3) — async multi-stage golden example analysis (Feb 2026)
+5. Review and act on the open CVE security patch PR
+6. Make and test significant UI/feature changes on `staging` before pushing to `main`
+7. Fix Bug #22 (Generate New Document dropdown lists file names instead of types) — requires scoping before fixing
+8. Fix Bug #35 (company artifact URL upload fails with pattern mismatch error)
+9. Feature #11: Download output documents — HTML preview + DOCX on-demand (requires new generation system consuming blueprint)
+10. Separate Supabase projects (staging vs production) — **required before public launch**
+11. Populate knowledge base files with real Agentica AI content
+12. Remove `WriterAgent` file (`backend/agents/writer_agent.py`) — no longer imported
+13. Centralise the Claude model string into `ANTHROPIC_MODEL` constant or env var
 
 ### Open Bug Log (Staging — Feb 2026)
 
@@ -205,6 +239,7 @@ Supabase
 | 32 | ARTIFACTS count in Candidates table always shows 0 — does not increment on add or decrement on delete | Fixed in `8ce0b58` | Added `INCREMENT/DECREMENT_CANDIDATE/INTERVIEWER_ARTIFACT_COUNT` reducer actions in `useProjectReducer.ts` + types. Wired `onArtifactAdded` callbacks from `page.tsx` → `ProjectPopups.tsx` → `CandidateEditPopup`/`InterviewerEditPopup`. Each popup calls `onArtifactAdded(id)` after a successful artifact upload, immediately updating the displayed count in the React state without requiring a page reload |
 | 31 | Artifact tables: no visible scrollbar when content overflows — rightmost columns (including delete button) are cut off and not obviously reachable | Fixed in `8ce0b58` | Changed `overflow-x-auto` to `overflow-x-scroll` in `ArtifactsSection.tsx`; wrapped the `<table>` in `<div className="overflow-x-scroll">` in `CandidatesSection.jsx` and `InterviewersSection.jsx` (those had no wrapper at all) — scrollbar is now always visible |
 | 30 | Adding a Company artifact via URL input fails — "Source URL is required for URL artifacts" | Fixed in `8ce0b58` | `UnifiedArtifactUploadPopup.tsx` was spreading `{ url: url.trim() }` for URL input type, but `projectApi.addCompanyArtifact`/`addRoleArtifact` check `artifactData.sourceUrl`. Fixed by changing the spread key from `url` to `sourceUrl` — matching the `ArtifactUploadData` type definition |
+| 35 | Adding a Company artifact via URL input fails — "The string did not match the expected pattern" | Open | Distinct from Bug #30 (which was fixed). This browser-side validation error occurs before the API call. Likely a Supabase client-side URL format check rejecting certain URL patterns. Not yet investigated. |
 
 ---
 

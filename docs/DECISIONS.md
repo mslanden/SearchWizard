@@ -296,3 +296,43 @@ A full code review cleanup pass was performed in commit `86f4227` on the `stagin
 `app/api/generate-document/route.js` called the legacy backend endpoint
 `/generate-document` — a different path from the V2 endpoint. Neither the proxy
 nor the legacy endpoint had any callers in the current codebase.
+
+---
+
+## ADR-011 — Document DNA Multi-Stage Blueprint Pipeline (Feb 2026)
+
+**Status:** Active (on staging)
+
+**Decision:**
+Replace the single-pass golden example analysis (StructureAgent → `template_prompt` + `visual_data`)
+with a five-stage async pipeline that produces a machine-readable **JSON Blueprint** stored in
+`golden_examples.blueprint` (JSONB). All existing golden example records are deleted by users
+and reprocessed — no migration of old records needed.
+
+**Pipeline stages:**
+- **A — Preprocessor** (sync): file bytes → Intermediate Document Model (IDM). PyMuPDF `get_text("dict")` for native PDFs; python-docx for DOCX; minimal single-block IDM for images.
+- **B — Semantic Analyzer** (async): IDM → `ContentStructureSpec`. Claude `claude-sonnet-4-6` with tool use (`tool_choice={"type":"tool","name":"document_structure"}`) to enforce JSON schema output. Condensed text representation sent to Claude (max 12,000 chars).
+- **C — Layout Analyzer** (async): IDM → `LayoutSpec`. Algorithmic for PDFs (margin detection from min/max block positions, column clustering, header/footer detection by page-coverage frequency, spacing from y-gap medians). Claude fallback for DOCX (no bboxes available).
+- **D — Visual Style Analyzer** (async): IDM + file bytes → `VisualStyleSpec`. Algorithmic first (span style aggregation by role, colour census). Claude Vision second (first 2 pages rendered to PNG via `fitz.page.get_pixmap(matrix=fitz.Matrix(1.5,1.5)).tobytes("png")`) — asks Claude to confirm / correct candidate tokens.
+- **E — Blueprint Assembler** (sync): merges B+C+D → `JSONBlueprint` with `blueprint_id`, `generated_at`, and all three specs. Validates required fields; fills missing with sentinel `{"value": null, "inferred": true}`.
+
+**Key choices and reasoning:**
+
+| Choice | Alternative considered | Reason chosen |
+|--------|----------------------|---------------|
+| FastAPI `BackgroundTasks` | Redis/Celery queue | No new infra — Railway already runs FastAPI; at current scale BackgroundTasks is sufficient |
+| `asyncio.gather` for B/C/D | Sequential execution | ~3× faster; each stage is independently I/O-bound (Claude API calls) |
+| PyMuPDF `get_pixmap` for PNG rendering | pdf2image/poppler | PyMuPDF already installed; poppler adds a Railway system dependency and build complexity |
+| Claude Sonnet 4.6 for all stages | GPT for semantic, Gemini for visual | Single provider: simpler, consistent, lower latency; revisit if quality gaps identified |
+| JSON Blueprint (3 separate specs) | Single template_prompt string | Machine-readable structure enables future multi-example synthesis (pass list of IDMs to B/C/D) and deterministic DOCX rendering without reverse-parsing a prompt string |
+| HTTP 202 + polling | SSE / WebSocket | Simplest frontend implementation; 4-second polling with 75-attempt (5-minute) timeout adequate for pipeline duration (30–90 s typical) |
+
+**Backward compatibility:**
+- Old `POST /api/templates` endpoint kept intact (returns 200 synchronously).
+- `generate_document_v2` prefers `blueprint` when present; falls back to `template_prompt` + `visual_data` for existing records.
+- Old `template_prompt` / `visual_data` columns left in place (not dropped).
+
+**Future path:**
+- Multi-example synthesis: pass list of IDMs to Stages B/C/D; `asyncio.gather` already accepts lists — currently always length 1.
+- New document generation system consuming `JSONBlueprint` → structured DOCX via python-docx (planned, separate session).
+- Download Feature #11: HTML preview (existing) + DOCX on-demand from same Document JSON intermediate.

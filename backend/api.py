@@ -15,7 +15,9 @@ import io
 import anthropic
 from typing import Optional, Dict, List, Any
 import uuid
-from fastapi import FastAPI, HTTPException, Body, File, UploadFile, Form, Query
+import asyncio
+from fastapi import FastAPI, HTTPException, Body, File, UploadFile, Form, Query, BackgroundTasks
+from pipeline.pipeline_runner import run_pipeline_and_store
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -63,6 +65,11 @@ VISION_MAX_TOKENS          = 2000    # max_tokens for PDF visual analysis call
 TEMPLATE_MAX_TOKENS        = 3000    # max_tokens for template prompt creation call
 GENERATION_MAX_TOKENS      = 8000    # max_tokens for final document generation call
 PDF_VISION_PAGES           = 2       # number of PDF pages sent to Claude Vision
+
+# Blueprint pipeline token limits
+BLUEPRINT_SEMANTIC_MAX_TOKENS = 4000
+BLUEPRINT_VISUAL_MAX_TOKENS   = 3000
+BLUEPRINT_LAYOUT_MAX_TOKENS   = 2000
 
 # Initialize FastAPI app
 app = FastAPI(title="Search Wizard API", 
@@ -352,6 +359,157 @@ Return ONLY the template prompt text that will be used for document generation."
         print(f"Template creation error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error creating template: {str(e)}")
 
+# ---------------------------------------------------------------------------
+# V3 Template creation — async Document DNA pipeline
+# ---------------------------------------------------------------------------
+
+@app.post("/api/templates/v3")
+async def create_template_v3(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    name: str = Form(...),
+    user_id: str = Form(...),
+    document_type: str = Form(None),
+):
+    """
+    Create a golden example template using the V3 Document DNA pipeline.
+
+    Returns HTTP 202 immediately after uploading the file and inserting a
+    'processing' DB record.  The blueprint is built asynchronously in the
+    background; poll GET /api/templates/{id}/status for completion.
+    """
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise HTTPException(status_code=500, detail="Supabase configuration missing")
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=500, detail="Anthropic API key not configured")
+
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+    file_bytes = await file.read()
+    if len(file_bytes) < 10:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty or too small")
+
+    # Resolve document_type
+    if not document_type:
+        document_type = "document"
+
+    # Upload file to Supabase storage
+    file_extension = os.path.splitext(file.filename or "file")[1]
+    storage_filename = f"{user_id}/{name}_{datetime.datetime.utcnow().isoformat()}{file_extension}"
+    original_file_url = None
+    try:
+        supabase.storage.from_("golden-examples").upload(
+            storage_filename, file_bytes, {"content-type": file.content_type or "application/octet-stream"}
+        )
+        original_file_url = supabase.storage.from_("golden-examples").get_public_url(storage_filename)
+    except Exception as e:
+        print(f"V3 file upload failed: {e}")
+
+    # Insert DB record with status='processing'
+    template_id = str(uuid.uuid4())
+    template_data = {
+        "id": template_id,
+        "name": name,
+        "user_id": user_id,
+        "document_type": document_type,
+        "file_type": file.content_type or "application/octet-stream",
+        "original_content": "",
+        "template_prompt": None,
+        "visual_data": None,
+        "blueprint": None,
+        "status": "processing",
+        "original_file_url": original_file_url,
+        "file_size": len(file_bytes),
+        "usage_count": 0,
+        "is_global": False,
+        "version": 3,
+        "date_added": datetime.datetime.utcnow().isoformat(),
+    }
+    supabase.table("golden_examples").insert(template_data).execute()
+
+    # Dispatch pipeline as a background task
+    background_tasks.add_task(
+        run_pipeline_and_store,
+        SUPABASE_URL,
+        SUPABASE_KEY,
+        ANTHROPIC_API_KEY,
+        template_id,
+        file_bytes,
+        file.filename or f"file{file_extension}",
+        document_type,
+    )
+
+    return {"template_id": template_id, "status": "processing"}
+
+
+@app.get("/api/templates/{template_id}/status")
+async def get_template_status(template_id: str, user_id: str = Query(...)):
+    """Poll the processing status of a V3 template blueprint pipeline."""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise HTTPException(status_code=500, detail="Supabase configuration missing")
+
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    response = (
+        supabase.table("golden_examples")
+        .select("id, status, blueprint, processing_error")
+        .eq("id", template_id)
+        .eq("user_id", user_id)
+        .single()
+        .execute()
+    )
+
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Template not found or access denied")
+
+    record = response.data
+    return {
+        "status": record.get("status", "ready"),
+        "blueprint": record.get("blueprint"),
+        "error": record.get("processing_error"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Helper: convert a V3 blueprint into a generation prompt (V2-compatible)
+# ---------------------------------------------------------------------------
+
+def _blueprint_to_generation_prompt(blueprint: dict) -> str:
+    """
+    Serialise a JSON blueprint into a structured generation prompt string
+    that the existing generate_document_v2 handler can consume.
+    """
+    import json
+
+    content_spec = blueprint.get("content_structure_spec", {})
+    layout_spec = blueprint.get("layout_spec", {})
+    visual_spec = blueprint.get("visual_style_spec", {})
+
+    sections = content_spec.get("sections", [])
+    section_lines = []
+    for s in sections:
+        indent = "  " * (s.get("depth", 1) - 1)
+        section_lines.append(
+            f"{indent}- [{s.get('intent', '').upper()}] {s.get('title', '')}: "
+            f"{s.get('micro_template', '')}"
+        )
+
+    prompt = f"""DOCUMENT STRUCTURE (from blueprint analysis):
+{chr(10).join(section_lines)}
+
+LAYOUT SPECIFICATION:
+- Page size: {layout_spec.get('page_size', 'A4')}
+- Column structure: {layout_spec.get('column_structure', 'single')}
+- Margins: {json.dumps(layout_spec.get('margins_pt', {}))}
+
+VISUAL STYLE:
+- Typography: {json.dumps(visual_spec.get('typography', {}), indent=2)}
+- Color palette: {json.dumps(visual_spec.get('color_palette', {}), indent=2)}
+
+Follow this structure precisely when generating the document. Use the section intents and micro-templates as writing guidance. Apply the visual style tokens to format headings, body text, and tables."""
+
+    return prompt
+
+
 # Template listing endpoint
 @app.get("/api/templates")
 async def list_templates(user_id: str = Query(...)):
@@ -363,7 +521,8 @@ async def list_templates(user_id: str = Query(...)):
 
         # Get user's templates + global templates
         response = supabase.table('golden_examples').select(
-            'id, name, document_type, file_type, original_file_url, usage_count, date_added, visual_data, version'
+            'id, name, document_type, file_type, original_file_url, usage_count, date_added, '
+            'visual_data, version, status, blueprint, template_prompt'
         ).or_(f'user_id.eq.{user_id},is_global.eq.true').order('date_added', desc=True).execute()
         
         return {"templates": response.data}
@@ -419,7 +578,16 @@ async def generate_document_v2(
             raise HTTPException(status_code=404, detail="Template not found")
         
         template = template_response.data
-        
+
+        # Build generation prompt — prefer V3 blueprint when available
+        blueprint = template.get("blueprint")
+        if blueprint:
+            template_prompt_text = _blueprint_to_generation_prompt(blueprint)
+            visual_data_json = blueprint.get("visual_style_spec", {})
+        else:
+            template_prompt_text = template.get("template_prompt", "")
+            visual_data_json = template.get("visual_data", {})
+
         # Get project artifacts
         artifacts_response = supabase.table('artifacts').select('*').eq('project_id', project_id).execute()
         artifacts = artifacts_response.data or []
@@ -483,7 +651,7 @@ async def generate_document_v2(
         
         # Create comprehensive generation prompt
         generation_prompt = f"""
-{template.get('template_prompt', '')}
+{template_prompt_text}
 
 COMPANY CONTEXT:
 {company_context}
@@ -498,7 +666,7 @@ PROCESS/INTERVIEWER INFORMATION:
 {process_context}
 
 VISUAL STYLING REQUIREMENTS:
-{json.dumps(template.get('visual_data', {}), indent=2)}
+{json.dumps(visual_data_json, indent=2)}
 
 USER SPECIFIC REQUIREMENTS:
 {user_requirements}

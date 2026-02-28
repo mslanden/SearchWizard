@@ -123,6 +123,7 @@ The app requires the following Supabase setup:
 | `project_outputs` | Generated document metadata | `project_id`, `name`, `output_type`, `file_url`, `file_path` |
 | `user_roles` | User role and approval status | `user_id`, `role`, `is_active` |
 | `artifact_types` | Admin-configurable artifact type options | `id` (TEXT slug, PK), `category`, `name`, `sort_order`, `is_active` |
+| `golden_examples` | Golden example templates (V2 + V3) | `id` (UUID), `user_id`, `name`, `document_type`, `original_file_url`, `template_prompt` (V2, deprecated), `visual_data` (V2, deprecated), `blueprint` (V3 JSONB), `status` (`'processing'`\|`'ready'`\|`'error'`), `processing_error`, `processing_started_at`, `processing_completed_at`, `usage_count`, `date_added` |
 
 ### Stored Procedures (required for auth)
 - `get_user_status_for_auth(user_id)` — returns user role and approval status
@@ -212,6 +213,17 @@ CREATE POLICY "Users can delete own process artifacts"
   USING (auth.uid() = user_id);
 
 ALTER TABLE process_artifacts ENABLE ROW LEVEL SECURITY;
+
+-- 7. Add blueprint pipeline columns to golden_examples (V3 — applied Feb 2026)
+ALTER TABLE golden_examples
+  ADD COLUMN IF NOT EXISTS blueprint JSONB DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'ready',
+  ADD COLUMN IF NOT EXISTS processing_error TEXT,
+  ADD COLUMN IF NOT EXISTS processing_started_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS processing_completed_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS golden_examples_status_idx
+  ON golden_examples (status) WHERE status != 'ready';
 ```
 
 ---

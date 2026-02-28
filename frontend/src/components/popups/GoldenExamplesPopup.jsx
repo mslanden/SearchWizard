@@ -6,12 +6,17 @@ import { artifactApi } from '../../lib/api';
 import { storageApi } from '../../lib/api/storageApi';
 import { supabase } from '../../lib/supabase';
 import StructureViewer from '../StructureViewer';
+import BlueprintViewer from '../BlueprintViewer';
 import { useAuth } from '../../contexts/AuthContext';
 
 
 export default function GoldenExamplesPopup({ onClose }) {
   const popupRef = useRef(null);
+  const pollIntervalRef = useRef(null);
   const { user } = useAuth();
+  const [processingTemplateId, setProcessingTemplateId] = useState(null);
+  const [isBlueprintViewerOpen, setIsBlueprintViewerOpen] = useState(false);
+  const [currentBlueprint, setCurrentBlueprint] = useState(null);
 
   // Prevent parent click from closing when clicking inside the popup
   const handleContainerClick = (e) => {
@@ -38,6 +43,55 @@ export default function GoldenExamplesPopup({ onClose }) {
   // State for structure viewer
   const [isStructureViewerOpen, setIsStructureViewerOpen] = useState(false);
   const [currentStructure, setCurrentStructure] = useState(null);
+
+  // Cleanup poll interval on unmount
+  useEffect(() => () => clearInterval(pollIntervalRef.current), []);
+
+  // Poll /api/templates/{id}/status every 4 s until ready / error / timeout
+  const pollStatus = (templateId) => {
+    let attempts = 0;
+    const MAX_ATTEMPTS = 75; // 5 minutes
+
+    pollIntervalRef.current = setInterval(async () => {
+      attempts++;
+      if (attempts > MAX_ATTEMPTS) {
+        clearInterval(pollIntervalRef.current);
+        setProcessingTemplateId(null);
+        setError('Processing timed out. Please try again.');
+        return;
+      }
+
+      try {
+        const userId = user?.id;
+        let backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://searchwizard-production.up.railway.app';
+        if (backendUrl && !backendUrl.startsWith('http://') && !backendUrl.startsWith('https://')) {
+          backendUrl = `https://${backendUrl}`;
+        }
+
+        const res = await fetch(`${backendUrl}/api/templates/${templateId}/status?user_id=${userId}`);
+        if (!res.ok) return;
+
+        const data = await res.json();
+
+        if (data.status === 'ready') {
+          clearInterval(pollIntervalRef.current);
+          setProcessingTemplateId(null);
+          await fetchGoldenExamples();
+          setIsAddExampleOpen(false);
+          setUploadData({ name: '', description: '', exampleType: 'role_specification', files: [] });
+          setAnalysisStatus('Template created successfully!');
+          setTimeout(() => setAnalysisStatus(''), 3000);
+        } else if (data.status === 'error') {
+          clearInterval(pollIntervalRef.current);
+          setProcessingTemplateId(null);
+          await fetchGoldenExamples();
+          setUploadError(`Processing failed: ${data.error || 'Unknown error'}`);
+        }
+      } catch (err) {
+        console.error('Poll error:', err);
+      }
+    }, 4000);
+  };
 
   // Handle document structure generation for an existing example
   async function handleGenerateStructure(documentId) {
@@ -166,8 +220,14 @@ export default function GoldenExamplesPopup({ onClose }) {
     window.open(data.signedUrl, '_blank');
   }
 
-  // Handle viewing structure for V2 templates
+  // Handle viewing structure — routes to BlueprintViewer for V3 records
   async function handleViewStructure(example) {
+    if (example.blueprint) {
+      setCurrentBlueprint(example.blueprint);
+      setIsBlueprintViewerOpen(true);
+      return;
+    }
+
     try {
       setLoading(true);
       setError('');
@@ -180,7 +240,7 @@ export default function GoldenExamplesPopup({ onClose }) {
         type: example.type,
         hasVisualAnalysis: example.hasVisualAnalysis
       };
-      
+
       setCurrentStructure(structureData);
       setIsStructureViewerOpen(true);
       setLoading(false);
@@ -291,20 +351,35 @@ export default function GoldenExamplesPopup({ onClose }) {
           backendUrl = `https://${backendUrl}`;
         }
         
-        console.log('Posting template to:', `${backendUrl}/api/templates`);
-        
-        const response = await fetch(`${backendUrl}/api/templates`, {
+        console.log('Posting template to:', `${backendUrl}/api/templates/v3`);
+
+        const response = await fetch(`${backendUrl}/api/templates/v3`, {
           method: 'POST',
           body: formData
         });
 
         console.log('Template creation response status:', response.status);
 
-        if (!response.ok) {
+        if (response.status === 202) {
+          // V3: pipeline dispatched in background — start polling
+          const result = await response.json();
+          const templateId = result.template_id;
+
+          // Add a provisional entry to the list so the user sees it immediately
+          await fetchGoldenExamples();
+
+          setProcessingTemplateId(templateId);
+          setIsAddExampleOpen(false);
+          setUploadData({ name: '', description: '', exampleType: 'role_specification', files: [] });
+          setAnalysisStatus('Document uploaded — analysing structure in background...');
+          setTimeout(() => setAnalysisStatus(''), 5000);
+
+          // Begin polling
+          pollStatus(templateId);
+        } else if (!response.ok) {
           const errorText = await response.text();
           console.error('Template creation error:', response.status, errorText);
-          
-          // Try to parse as JSON, fallback to text
+
           let errorMessage = errorText;
           try {
             const errorJson = JSON.parse(errorText);
@@ -312,33 +387,20 @@ export default function GoldenExamplesPopup({ onClose }) {
           } catch (e) {
             // Use text as-is
           }
-          
+
           throw new Error(`Failed to create template: ${response.status} - ${errorMessage}`);
-        }
-
-        const result = await response.json();
-
-        if (result.success) {
-          // Refresh the templates list
-          await fetchGoldenExamples();
-          
-          setIsAddExampleOpen(false);
-          setUploadData({
-            name: '',
-            description: '',
-            exampleType: 'role_specification',
-            files: []
-          });
-          
-          const successMessage = result.visual_analysis_available 
-            ? 'Template created successfully with visual analysis!'
-            : 'Template created successfully!';
-          setAnalysisStatus(successMessage);
-          
-          // Clear success message after 3 seconds
-          setTimeout(() => setAnalysisStatus(''), 3000);
         } else {
-          throw new Error('Failed to create template');
+          // Synchronous success (fallback / old endpoint)
+          const result = await response.json();
+          if (result.success) {
+            await fetchGoldenExamples();
+            setIsAddExampleOpen(false);
+            setUploadData({ name: '', description: '', exampleType: 'role_specification', files: [] });
+            setAnalysisStatus('Template created successfully!');
+            setTimeout(() => setAnalysisStatus(''), 3000);
+          } else {
+            throw new Error('Failed to create template');
+          }
         }
       } catch (error) {
 
@@ -425,12 +487,14 @@ export default function GoldenExamplesPopup({ onClose }) {
             dateAdded: new Date(template.date_added).toLocaleDateString(),
             url: cleanUrl,
             description: template.description || '',
-            isStructure: false, // V2 templates don't separate structure
-            isTemplate: true, // All templates are V2 templates
+            isStructure: false,
+            isTemplate: true,
             hasVisualAnalysis: template.visual_data && Object.keys(template.visual_data).length > 1,
             usageCount: template.usage_count || 0,
-            templatePrompt: template.template_prompt, // Store template prompt for structure viewing
-            visualData: template.visual_data
+            templatePrompt: template.template_prompt,
+            visualData: template.visual_data,
+            status: template.status || 'ready',
+            blueprint: template.blueprint || null,
           };
         });
 
@@ -551,55 +615,72 @@ export default function GoldenExamplesPopup({ onClose }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 bg-white">
-                    {goldenExamples.map(example => (
-                      <tr key={example.id} className="hover:bg-gray-50">
-                        <td className="py-3 px-4 text-gray-900">
-                          <div className="flex items-center">
-                            <div className="text-gray-500 mr-2">
-                              {example.isStructure ? <CogIcon className="h-5 w-5" /> : <DocumentIcon className="h-5 w-5" />}
+                    {goldenExamples.map(example => {
+                      const isProcessing = example.status === 'processing';
+                      const hasError = example.status === 'error';
+                      return (
+                        <tr key={example.id} className="hover:bg-gray-50">
+                          <td className="py-3 px-4 text-gray-900">
+                            <div className="flex items-center gap-2">
+                              <div className="text-gray-500">
+                                {example.isStructure ? <CogIcon className="h-5 w-5" /> : <DocumentIcon className="h-5 w-5" />}
+                              </div>
+                              <div>
+                                <div className="font-medium flex items-center gap-2">
+                                  {example.name}
+                                  {isProcessing && (
+                                    <span className="inline-flex items-center gap-1 text-xs text-blue-600">
+                                      <span className="animate-spin rounded-full h-3 w-3 border-b border-blue-600"></span>
+                                      Processing...
+                                    </span>
+                                  )}
+                                  {hasError && (
+                                    <span className="text-xs text-red-600 font-normal">Processing failed</span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-gray-500">{example.description}</div>
+                              </div>
                             </div>
-                            <div>
-                              <div className="font-medium">{example.name}</div>
-                              <div className="text-xs text-gray-500">{example.description}</div>
+                          </td>
+                          <td className="py-3 px-4 text-gray-700 text-sm">
+                            {example.type}
+                          </td>
+                          <td className="py-3 px-4 text-gray-700">{example.dateAdded}</td>
+                          <td className="py-3 px-4 text-gray-700">
+                            <span className="text-sm font-medium">{example.usageCount || 0}</span>
+                            <span className="text-xs text-gray-500 ml-1">uses</span>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="flex space-x-3 justify-end">
+                              <button
+                                type="button"
+                                onClick={() => handleViewFile(example)}
+                                className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-100"
+                                title="View file"
+                              >
+                                <DocumentTextIcon className="h-5 w-5" />
+                              </button>
+                              <button
+                                onClick={() => handleViewStructure(example)}
+                                disabled={isProcessing}
+                                className="text-green-600 hover:text-green-800 p-1 rounded hover:bg-green-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                                title={example.blueprint ? 'View blueprint' : 'View structure'}
+                              >
+                                <EyeIcon className="h-5 w-5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteExample(example.id)}
+                                disabled={isProcessing}
+                                className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                                title="Delete example"
+                              >
+                                <TrashIcon className="h-5 w-5" />
+                              </button>
                             </div>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-gray-700 text-sm">
-                          {example.type}
-                        </td>
-                        <td className="py-3 px-4 text-gray-700">{example.dateAdded}</td>
-                        <td className="py-3 px-4 text-gray-700">
-                          <span className="text-sm font-medium">{example.usageCount || 0}</span>
-                          <span className="text-xs text-gray-500 ml-1">uses</span>
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex space-x-3 justify-end">
-                            <button
-                              type="button"
-                              onClick={() => handleViewFile(example)}
-                              className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-100"
-                              title="View file"
-                            >
-                              <DocumentTextIcon className="h-5 w-5" />
-                            </button>
-                            <button
-                              onClick={() => handleViewStructure(example)}
-                              className="text-green-600 hover:text-green-800 p-1 rounded hover:bg-green-100"
-                              title="View structure"
-                            >
-                              <EyeIcon className="h-5 w-5" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteExample(example.id)}
-                              className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-100"
-                              title="Delete example"
-                            >
-                              <TrashIcon className="h-5 w-5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -750,11 +831,18 @@ export default function GoldenExamplesPopup({ onClose }) {
         </div>
       </div>
 
-      {/* Structure Viewer */}
-      <StructureViewer 
-        isOpen={isStructureViewerOpen} 
-        onClose={() => setIsStructureViewerOpen(false)} 
-        structure={currentStructure} 
+      {/* Structure Viewer (V2 templates) */}
+      <StructureViewer
+        isOpen={isStructureViewerOpen}
+        onClose={() => setIsStructureViewerOpen(false)}
+        structure={currentStructure}
+      />
+
+      {/* Blueprint Viewer (V3 templates) */}
+      <BlueprintViewer
+        isOpen={isBlueprintViewerOpen}
+        onClose={() => setIsBlueprintViewerOpen(false)}
+        blueprint={currentBlueprint}
       />
     </div>
   );
