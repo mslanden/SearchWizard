@@ -97,6 +97,14 @@ export const interviewerApi = {
       // Increment interviewer artifact count
       await incrementCount('interviewers', 'id', interviewerId, 'artifacts_count');
 
+      // Fire-and-forget: generate embedding for semantic artifact retrieval (Project Brain)
+      const _embedUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://searchwizard-production.up.railway.app';
+      fetch(`${_embedUrl}/api/artifacts/embed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artifact_id: data.id, table: 'process_artifacts', user_id: user.id }),
+      }).catch(err => console.warn('Embedding generation failed (non-critical):', err));
+
       return transformDatabaseObject(data);
     } catch (error) {
       handleApiError(error, 'add process artifact');

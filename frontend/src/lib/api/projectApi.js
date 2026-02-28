@@ -101,6 +101,14 @@ export const projectApi = {
       // Increment project artifact count
       await incrementCount('projects', 'id', projectId, 'artifact_count');
 
+      // Fire-and-forget: generate embedding for semantic artifact retrieval (Project Brain)
+      const _embedUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://searchwizard-production.up.railway.app';
+      fetch(`${_embedUrl}/api/artifacts/embed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artifact_id: data.id, table: 'artifacts', user_id: user.id }),
+      }).catch(err => console.warn('Embedding generation failed (non-critical):', err));
+
       const types = await storageApi.getArtifactTypes('company');
       const typeMap = Object.fromEntries(types.map(t => [t.id, t.name]));
       const transformed = transformDatabaseObject(data);
@@ -197,6 +205,14 @@ export const projectApi = {
 
       // Increment project artifact count
       await incrementCount('projects', 'id', projectId, 'artifact_count');
+
+      // Fire-and-forget: generate embedding for semantic artifact retrieval (Project Brain)
+      const _embedUrlRole = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://searchwizard-production.up.railway.app';
+      fetch(`${_embedUrlRole}/api/artifacts/embed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artifact_id: data.id, table: 'artifacts', user_id: user.id }),
+      }).catch(err => console.warn('Embedding generation failed (non-critical):', err));
 
       const types = await storageApi.getArtifactTypes('role');
       const typeMap = Object.fromEntries(types.map(t => [t.id, t.name]));

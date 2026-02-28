@@ -57,6 +57,7 @@ ENABLE_LLAMAPARSE=true
 LLAMAPARSE_PRICING_TIER=premium      # or "fast"
 NEXT_PUBLIC_SUPABASE_URL=https://....supabase.co
 NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY=eyJ...
+OPENAI_API_KEY=sk-...                # Required for Project Brain embeddings (falls back to keyword scoring if absent)
 REDIS_URL=redis://localhost:6379     # Optional
 PORT=8000
 ```
@@ -115,9 +116,9 @@ The app requires the following Supabase setup:
 | Table | Description | Key Columns |
 |-------|-------------|-------------|
 | `projects` | Project records | `user_id`, `title`, `client`, `date`, `description`, `background_color`, `artifact_count` |
-| `artifacts` | Company and role artifacts linked to projects | `project_id`, `artifact_type` (`'company'`/`'role'`), `document_type` (specific type slug), `input_type`, `name`, `file_url`, `file_path`, `source_url`, `processed_content` |
-| `candidate_artifacts` | Artifacts linked to candidates | `candidate_id`, `artifact_type` (slug), `input_type`, `name`, `file_url`, `file_path`, `source_url`, `processed_content`, `file_type`, `file_size` |
-| `process_artifacts` | Artifacts linked to interviewers | `interviewer_id`, `artifact_type` (slug), `input_type`, `name`, `file_url`, `file_path`, `source_url`, `processed_content`, `file_type`, `file_size` |
+| `artifacts` | Company and role artifacts linked to projects | `project_id`, `artifact_type` (`'company'`/`'role'`), `document_type` (specific type slug), `input_type`, `name`, `file_url`, `file_path`, `source_url`, `processed_content`, `embedding` (vector(1536), Project Brain), `summary` (stub), `tags` (stub) |
+| `candidate_artifacts` | Artifacts linked to candidates | `candidate_id`, `artifact_type` (slug), `input_type`, `name`, `file_url`, `file_path`, `source_url`, `processed_content`, `file_type`, `file_size`, `embedding` (vector(1536)), `summary` (stub), `tags` (stub) |
+| `process_artifacts` | Artifacts linked to interviewers | `interviewer_id`, `artifact_type` (slug), `input_type`, `name`, `file_url`, `file_path`, `source_url`, `processed_content`, `file_type`, `file_size`, `embedding` (vector(1536)), `summary` (stub), `tags` (stub) |
 | `candidates` | Candidate profiles | `project_id`, `name`, `role`, `company`, `email`, `phone`, `photo_url`, `artifacts_count` |
 | `interviewers` | Interviewer profiles | `project_id`, `name`, `position`, `company`, `email`, `phone`, `photo_url`, `artifacts_count` |
 | `project_outputs` | Generated document metadata | `project_id`, `name`, `output_type`, `file_url`, `file_path` |
@@ -224,7 +225,35 @@ ALTER TABLE golden_examples
 
 CREATE INDEX IF NOT EXISTS golden_examples_status_idx
   ON golden_examples (status) WHERE status != 'ready';
+
+-- 8. Add Project Brain embedding + metadata stub columns (Feb 2026)
+-- Requires pgvector extension (available on Supabase Pro)
+CREATE EXTENSION IF NOT EXISTS vector;
+
+ALTER TABLE artifacts
+  ADD COLUMN IF NOT EXISTS embedding  vector(1536),
+  ADD COLUMN IF NOT EXISTS summary    TEXT,
+  ADD COLUMN IF NOT EXISTS tags       TEXT[];
+CREATE INDEX IF NOT EXISTS artifacts_embedding_idx
+  ON artifacts USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+
+ALTER TABLE candidate_artifacts
+  ADD COLUMN IF NOT EXISTS embedding  vector(1536),
+  ADD COLUMN IF NOT EXISTS summary    TEXT,
+  ADD COLUMN IF NOT EXISTS tags       TEXT[];
+CREATE INDEX IF NOT EXISTS candidate_artifacts_embedding_idx
+  ON candidate_artifacts USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+
+ALTER TABLE process_artifacts
+  ADD COLUMN IF NOT EXISTS embedding  vector(1536),
+  ADD COLUMN IF NOT EXISTS summary    TEXT,
+  ADD COLUMN IF NOT EXISTS tags       TEXT[];
+CREATE INDEX IF NOT EXISTS process_artifacts_embedding_idx
+  ON process_artifacts USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 ```
+
+`summary` and `tags` are stubs — NULL until the future Artifact Processing Pipeline populates
+them. `embedding` is populated on each artifact upload via `/api/artifacts/embed`.
 
 ---
 

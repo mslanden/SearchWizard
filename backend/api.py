@@ -18,6 +18,8 @@ import uuid
 import asyncio
 from fastapi import FastAPI, HTTPException, Body, File, UploadFile, Form, Query, BackgroundTasks
 from pipeline.pipeline_runner import run_pipeline_and_store
+from brain.brain import build_brain_context, call_claude
+from brain.embedder import embed_and_store
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -51,6 +53,7 @@ from utils import extract_text_from_pdf
 SUPABASE_URL = os.environ.get('NEXT_PUBLIC_SUPABASE_URL', '')
 SUPABASE_KEY = os.environ.get('NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY', '')
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
 
 # Generation limits — centralised here so they are easy to tune
 MAX_TEMPLATE_CONTENT_CHARS = 15000   # chars of golden example fed to template creation
@@ -700,6 +703,136 @@ Generate a complete, professional document that follows the template structure a
     except Exception as e:
         print(f"Document generation error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error generating document: {str(e)}")
+
+@app.post("/api/generate-document/v3")
+async def generate_document_v3_endpoint(
+    template_id:      str           = Body(...),
+    project_id:       str           = Body(...),
+    user_id:          str           = Body(...),
+    user_requirements: str          = Body(default=""),
+    candidate_id:     Optional[str] = Body(default=None),
+    interviewer_id:   Optional[str] = Body(default=None),
+    preview_only:     bool          = Body(default=False),
+):
+    """
+    V3 document generation using Project Brain semantic artifact selection.
+
+    The Brain reads the template's V3 blueprint, scores all project artifacts against
+    the blueprint's section intents using OpenAI embeddings (keyword fallback when
+    embeddings are absent), and composes a structured generation prompt.
+
+    If preview_only=True: returns assembled prompt + selected_artifacts without
+    calling Claude (used by the "Preview Prompt" feature in the frontend).
+    """
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+        context = await build_brain_context(
+            supabase=supabase,
+            project_id=project_id,
+            template_id=template_id,
+            candidate_id=candidate_id,
+            interviewer_id=interviewer_id,
+            user_requirements=user_requirements,
+        )
+
+        if preview_only:
+            return {
+                "prompt": context["prompt"],
+                "selected_artifacts": context["selected_artifacts"],
+            }
+
+        html_content = await call_claude(
+            anthropic_client=anthropic_client,
+            prompt=context["prompt"],
+            max_tokens=GENERATION_MAX_TOKENS,
+        )
+
+        # Increment template usage count
+        try:
+            template_resp = supabase.table('golden_examples').select(
+                'usage_count'
+            ).eq('id', template_id).single().execute()
+            current_count = (template_resp.data or {}).get('usage_count', 0) or 0
+            supabase.table('golden_examples').update(
+                {'usage_count': current_count + 1}
+            ).eq('id', template_id).execute()
+        except Exception:
+            pass  # Non-critical
+
+        return {
+            "success": True,
+            "html_content": html_content,
+            "selected_artifacts": context["selected_artifacts"],
+            "document_type": context.get("document_type", ""),
+            "timestamp": datetime.datetime.now().isoformat(),
+        }
+
+    except Exception as e:
+        print(f"V3 document generation error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating document: {str(e)}")
+
+
+@app.post("/api/artifacts/embed")
+async def embed_artifact_endpoint(
+    artifact_id: str = Body(...),
+    table:       str = Body(...),
+    user_id:     str = Body(...),
+):
+    """
+    Generate and store an embedding for a single artifact.
+    Called fire-and-forget from the frontend immediately after artifact upload.
+    Supported tables: 'artifacts', 'candidate_artifacts', 'process_artifacts'.
+    """
+    allowed_tables = {'artifacts', 'candidate_artifacts', 'process_artifacts'}
+    if table not in allowed_tables:
+        raise HTTPException(status_code=400, detail=f"Invalid table: {table}")
+
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        art_resp = supabase.table(table).select('*').eq('id', artifact_id).single().execute()
+        if not art_resp.data:
+            raise HTTPException(status_code=404, detail="Artifact not found")
+        await embed_and_store(supabase, artifact_id, table, art_resp.data)
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Artifact embed error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating embedding: {str(e)}")
+
+
+async def _backfill_all_embeddings(supabase) -> None:
+    """Background task: generate embeddings for all artifacts with null embedding."""
+    for table in ('artifacts', 'candidate_artifacts', 'process_artifacts'):
+        try:
+            resp = supabase.table(table).select('*').is_('embedding', 'null').execute()
+            for artifact in (resp.data or []):
+                try:
+                    await embed_and_store(supabase, artifact['id'], table, artifact)
+                    print(f"[backfill] Embedded {table}/{artifact['id']}")
+                except Exception as e:
+                    print(f"[backfill] Failed {table}/{artifact['id']}: {e}")
+        except Exception as e:
+            print(f"[backfill] Failed to query {table}: {e}")
+
+
+@app.post("/api/brain/generate-embeddings")
+async def backfill_embeddings(
+    user_id: str = Body(...),
+    background_tasks: BackgroundTasks = None,
+):
+    """
+    Admin endpoint: queue embedding generation for all artifacts with null embeddings.
+    Useful for backfilling existing artifacts uploaded before this feature was introduced.
+    """
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    if background_tasks is None:
+        background_tasks = BackgroundTasks()
+    background_tasks.add_task(_backfill_all_embeddings, supabase)
+    return {"status": "queued", "message": "Embedding backfill queued for all artifact tables"}
+
 
 @app.get("/")
 async def root():

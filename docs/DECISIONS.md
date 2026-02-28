@@ -336,3 +336,41 @@ and reprocessed — no migration of old records needed.
 - Multi-example synthesis: pass list of IDMs to Stages B/C/D; `asyncio.gather` already accepts lists — currently always length 1.
 - New document generation system consuming `JSONBlueprint` → structured DOCX via python-docx (planned, separate session).
 - Download Feature #11: HTML preview (existing) + DOCX on-demand from same Document JSON intermediate.
+
+---
+
+## ADR-012 — Project Brain Semantic Artifact Retrieval (Feb 2026)
+
+**Status:** Active (on staging)
+
+**Decision:**
+Replace the blind artifact inclusion in `generate_document_v2` (fixed limits: 3 company + 3 role artifacts)
+with a semantic retrieval engine (`backend/brain/`) that scores all available artifacts against the
+blueprint's section intents and composes a section-aware generation prompt. Introduces a new
+`POST /api/generate-document/v3` endpoint and a redesigned Generate popup with candidate/interviewer
+selection and a "Preview Prompt" mode.
+
+**Key choices and reasoning:**
+
+| Choice | Alternative | Reason |
+|--------|-------------|--------|
+| OpenAI `text-embedding-3-small` (1536 dims) | Anthropic (no embeddings API), self-hosted | OpenAI key already in env; 1536 dims balances quality vs. storage cost |
+| pgvector on Supabase Pro | Pinecone/Weaviate, Redis vector | No new infra — pgvector is a Postgres extension, Supabase Pro already includes it |
+| ivfflat index (cosine) | hnsw | ivfflat is simpler to tune at current artifact volumes (<10,000 rows) |
+| Supabase FK traversal (Option B) | Graph DB (Neo4j, etc.) | No new infra; at current scale JOIN traversal is sufficient |
+| Keyword fallback scoring | Require embeddings | Brain works from day one before any embeddings are generated |
+| Fire-and-forget embed on upload | Sync embed during upload | Does not block the upload response; graceful failure if OpenAI is unavailable |
+| `preview_only=True` mode | Separate "get prompt" endpoint | Single endpoint, single payload — simpler frontend and backend contract |
+| Old `generate_document_v2` kept | Remove immediately | Low-risk; removal planned for a future cleanup session |
+
+**Metadata stubs:**
+`summary TEXT` and `tags TEXT[]` columns added to all three artifact tables. Always NULL until
+the future **Artifact Processing Pipeline** populates them. The Brain checks these fields and
+uses them when present; falls back to raw `processed_content` when absent.
+
+**Future path:**
+- Artifact Processing Pipeline: auto-generate `summary` and `tags` for each artifact on upload;
+  use summary as the primary embedding signal for higher-quality retrieval
+- Editable prompt in `PromptPreviewModal`: allow user to override Brain-assembled prompt before generation
+- Candidate → Role → Competency multi-hop graph traversal (extend `brain/knowledge_graph.py`)
+- Admin backfill: call `POST /api/brain/generate-embeddings` to generate embeddings for all existing artifacts

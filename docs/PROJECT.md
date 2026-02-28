@@ -46,13 +46,20 @@ FastAPI Backend (Railway)
     │  Golden example analysis pipeline (V3 — multi-stage async blueprint pipeline)
     │  File parsing pipeline
     │
-    ├── pipeline/             (V3 blueprint pipeline — see Data Flow V3 below)
+    ├── pipeline/             (blueprint pipeline — see Data Flow: Blueprint Pipeline)
     │   ├── preprocessor.py   →  Stage A: file bytes → Intermediate Document Model (IDM)
     │   ├── semantic_analyzer.py  →  Stage B: IDM → ContentStructureSpec (Claude tool use)
     │   ├── layout_analyzer.py    →  Stage C: IDM → LayoutSpec (algorithmic + Claude fallback)
     │   ├── visual_style_analyzer.py  →  Stage D: IDM → VisualStyleSpec (PyMuPDF + Claude Vision)
     │   ├── blueprint_assembler.py    →  Stage E: merge B+C+D → JSONBlueprint
     │   └── pipeline_runner.py        →  orchestrator (asyncio.gather for B/C/D concurrency)
+    ├── brain/                (Project Brain — semantic artifact retrieval for V3 generation)
+    │   ├── embedder.py           →  OpenAI text-embedding-3-small; embed_and_store()
+    │   ├── artifact_fetcher.py   →  fetch all artifacts for a generation task (company/role/candidate/process)
+    │   ├── knowledge_graph.py    →  Supabase FK traversal: project → entities
+    │   ├── relevance_ranker.py   →  cosine similarity scoring; keyword fallback
+    │   ├── prompt_builder.py     →  assemble section-aware generation prompt
+    │   └── brain.py              →  orchestrator: build_brain_context() + call_claude()
     ├── StructureAgent  →  analyzes uploaded golden examples → template_prompt + visual_data (V2, kept)
     ├── ImageAnalyzer   →  extracts images/layout from PDF golden examples
     ├── DocumentParser  →  LlamaParse premium → fast → PyMuPDF → fallback
@@ -71,7 +78,29 @@ Supabase
     │                   project-outputs, golden-examples
 ```
 
-### Data Flow — Document Generation (V2)
+### Data Flow — Document Generation (V3 — Project Brain)
+
+1. User opens **Generate Document** popup; selects a V3 template, optionally selects a candidate
+   and/or interviewer, adds requirements, clicks **Generate by Magic** or **Preview Prompt**
+2. Frontend `useDocumentGenerationV3` hook calls `POST /api/generate-document/v3`
+   (`preview_only: false` for direct generation; `preview_only: true` for preview)
+3. Backend `generate_document_v3_endpoint` runs the **Project Brain** pipeline:
+   - **Fetch blueprint** from `golden_examples.blueprint` (raises 400 if null — V3 required)
+   - **Fetch all artifacts** for the project (company + role + candidate + process, per selection)
+   - **Build entity context** from project/candidate/interviewer DB records
+   - **Rank artifacts** against blueprint section intents via OpenAI embeddings (cosine similarity)
+     + keyword fallback when embeddings are absent
+   - **Assemble section-aware prompt**: each section gets its top-3 matched artifacts as context
+4. If `preview_only=true`: returns `{prompt, selected_artifacts}` — shown in `PromptPreviewModal`
+5. Otherwise: calls `claude-sonnet-4-6` with assembled prompt → HTML document
+6. Frontend saves HTML to Supabase `project-outputs` bucket
+7. Output appears in the project's Outputs section
+
+**Proactive embedding on upload:** Each artifact upload fires a non-blocking call to
+`POST /api/artifacts/embed` which generates and stores a 1536-dim OpenAI embedding.
+Existing artifacts without embeddings fall back to keyword scoring automatically.
+
+### Data Flow — Document Generation (V2 — legacy, kept for backward compat)
 
 1. User selects a Project and clicks **Generate Document**
 2. Frontend popup (`GenerateDocumentPopup`) collects `templateId` + `userRequirements`
@@ -197,15 +226,21 @@ a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB 
 2. ✅ Artifact type system — DB-driven dropdowns for all artifact categories (Feb 2026)
 3. ✅ Code review cleanup — dead code deleted, constants extracted, components consolidated (Feb 2026, commit `86f4227`)
 4. ✅ Document DNA Blueprint Pipeline (V3) — async multi-stage golden example analysis (Feb 2026)
-5. Review and act on the open CVE security patch PR
-6. Make and test significant UI/feature changes on `staging` before pushing to `main`
-7. Fix Bug #22 (Generate New Document dropdown lists file names instead of types) — requires scoping before fixing
-8. Fix Bug #35 (company artifact URL upload fails with pattern mismatch error)
-9. Feature #11: Download output documents — HTML preview + DOCX on-demand (requires new generation system consuming blueprint)
-10. Separate Supabase projects (staging vs production) — **required before public launch**
-11. Populate knowledge base files with real Agentica AI content
-12. Remove `WriterAgent` file (`backend/agents/writer_agent.py`) — no longer imported
-13. Centralise the Claude model string into `ANTHROPIC_MODEL` constant or env var
+5. ✅ Project Brain — semantic artifact retrieval for V3 document generation (Feb 2026)
+   - Apply **Migration 8** to Supabase (pgvector + embedding columns) — see `docs/SETUP.md`
+   - Backfill existing artifacts: call `POST /api/brain/generate-embeddings` (admin endpoint)
+6. Review and act on the open CVE security patch PR
+7. Make and test significant UI/feature changes on `staging` before pushing to `main`
+8. Artifact Processing Pipeline — auto-generate `summary` + `tags` for each artifact on upload
+   (completes the metadata stubs in `brain/artifact_fetcher.py`)
+9. Fix Bug #22 (Generate New Document dropdown lists file names instead of types)
+10. Fix Bug #35 (company artifact URL upload fails with pattern mismatch error)
+11. Editable prompt in `PromptPreviewModal` — allow user to override Brain-assembled prompt before generation
+12. Feature #11: Download output documents — HTML preview + DOCX on-demand
+13. Separate Supabase projects (staging vs production) — **required before public launch**
+14. Populate knowledge base files with real Agentica AI content
+15. Remove `WriterAgent` file (`backend/agents/writer_agent.py`) — no longer imported
+16. Centralise the Claude model string into `ANTHROPIC_MODEL` constant or env var
 
 ### Open Bug Log (Staging — Feb 2026)
 
