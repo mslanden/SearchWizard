@@ -22,7 +22,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from pdf2image import convert_from_bytes
 from supabase import create_client, Client
 
 # Add the parent directory to sys.path to allow imports
@@ -178,7 +177,6 @@ async def create_template(
     try:
         import base64
         import io
-        from pdf2image import convert_from_bytes
         import anthropic
 
         if not SUPABASE_URL or not SUPABASE_KEY:
@@ -209,21 +207,21 @@ async def create_template(
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to initialize Anthropic client: {str(e)}")
         
-        # Convert PDF to images for Claude Vision (if PDF)
+        # Convert PDF to images for Claude Vision (if PDF) — uses PyMuPDF, no poppler required
         visual_data = {}
         if file.content_type == "application/pdf":
             try:
-                # Convert PDF to images
-                images = convert_from_bytes(file_content, first_page=1, last_page=PDF_VISION_PAGES + 1)
-
-                # Prepare images for Claude Vision
+                import fitz  # PyMuPDF
+                doc = fitz.open(stream=file_content, filetype="pdf")
+                mat = fitz.Matrix(1.5, 1.5)  # 108 DPI equivalent
                 image_data = []
-                for i, image in enumerate(images[:PDF_VISION_PAGES]):
-                    buffer = io.BytesIO()
-                    image.save(buffer, format='PNG')
-                    buffer.seek(0)
-                    image_b64 = base64.b64encode(buffer.getvalue()).decode()
-                    image_data.append(image_b64)
+                for i, page in enumerate(doc):
+                    if i >= PDF_VISION_PAGES:
+                        break
+                    pix = page.get_pixmap(matrix=mat)
+                    png_bytes = pix.tobytes("png")
+                    image_data.append(base64.b64encode(png_bytes).decode())
+                doc.close()
                 
                 visual_prompt = """Analyze this document's visual design and styling. Extract:
 1. Color scheme (background, text, accent colors)
