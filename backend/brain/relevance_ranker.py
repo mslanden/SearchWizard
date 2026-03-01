@@ -59,12 +59,25 @@ async def rank_artifacts_for_blueprint(
     return {'by_section': by_section, 'global': global_ranking}
 
 
+def _parse_embedding(value) -> list | None:
+    """Parse an embedding that may arrive as a JSON string from Supabase pgvector."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        import json
+        try:
+            return json.loads(value)
+        except Exception:
+            return None
+    return value
+
+
 def _score_artifact(artifact: dict, section_embedding: list | None, intent: str) -> float:
     """
     Score an artifact's relevance to a section.
     Uses cosine similarity when both embeddings are available; falls back to keyword overlap.
     """
-    artifact_embedding = artifact.get('embedding')
+    artifact_embedding = _parse_embedding(artifact.get('embedding'))
     if artifact_embedding and section_embedding:
         return cosine_similarity(artifact_embedding, section_embedding)
     return _keyword_score(artifact, intent)
