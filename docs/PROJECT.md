@@ -96,9 +96,13 @@ Supabase
 6. Frontend saves HTML to Supabase `project-outputs` bucket
 7. Output appears in the project's Outputs section
 
-**Proactive embedding on upload:** Each artifact upload fires a non-blocking call to
-`POST /api/artifacts/embed` which generates and stores a 1536-dim OpenAI embedding.
-Existing artifacts without embeddings fall back to keyword scoring automatically.
+**Proactive processing on upload:** Each artifact upload fires a non-blocking call to
+`POST /api/artifacts/process` which: (1) calls Claude Sonnet to generate a `summary` and
+extract `tags` (stored in the artifact row), then (2) re-generates the 1536-dim OpenAI
+embedding from the enriched text (`name + type + summary + tags + processed_content`).
+Artifacts with no `processed_content` (e.g. image uploads) are embedded from name + type only.
+Backfill for existing artifacts: `POST /api/brain/process-artifacts` (admin endpoint).
+The legacy `POST /api/artifacts/embed` endpoint is kept for backward compat (embedding only, no summary/tags).
 
 ### Data Flow — Document Generation (V2 — legacy, kept for backward compat)
 
@@ -234,8 +238,11 @@ a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB 
    - ✅ End-to-end V3 generation tested and verified on staging
 6. Review and act on the open CVE security patch PR
 7. Make and test significant UI/feature changes on `staging` before pushing to `main`
-8. Artifact Processing Pipeline — auto-generate `summary` + `tags` for each artifact on upload
-   (completes the metadata stubs in `brain/artifact_fetcher.py`)
+8. ✅ Artifact Processing Pipeline — Claude Sonnet generates `summary` + `tags` on upload; embedding re-run from enriched text (Mar 2026)
+   - ✅ `POST /api/artifacts/process` — fire-and-forget enrichment endpoint (replaces `/api/artifacts/embed` for new uploads)
+   - ✅ `POST /api/brain/process-artifacts` — admin backfill endpoint
+   - ✅ `brain/artifact_fetcher.py` — `key_topics` now derived from `tags` (no DB column needed)
+   - Backfill existing artifacts via `POST /api/brain/process-artifacts` after deploying to staging
 9. Fix Bug #36 (BlueprintViewer popup closes on any click — tabs and scroll inaccessible)
 10. Fix Bug #37 (old V2 popup flashes briefly before V3 popup appears on "Generate New")
 11. Fix Bug #22 (Generate New Document dropdown lists file names instead of types)

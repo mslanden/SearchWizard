@@ -20,6 +20,7 @@ from fastapi import FastAPI, HTTPException, Body, File, UploadFile, Form, Query,
 from pipeline.pipeline_runner import run_pipeline_and_store
 from brain.brain import build_brain_context, call_claude
 from brain.embedder import embed_and_store
+from pipeline.artifact_processor import process_artifact as process_artifact_fn
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -801,6 +802,71 @@ async def embed_artifact_endpoint(
     except Exception as e:
         print(f"Artifact embed error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error generating embedding: {str(e)}")
+
+
+@app.post("/api/artifacts/process")
+async def process_artifact_endpoint(
+    artifact_id: str = Body(...),
+    table:       str = Body(...),
+    user_id:     str = Body(...),
+):
+    """
+    Enrich a single artifact with a Claude-generated summary and tags, then
+    re-generate its embedding from the enriched text.
+
+    Called fire-and-forget from the frontend immediately after artifact upload,
+    replacing the old /api/artifacts/embed call for new uploads.
+    Supported tables: 'artifacts', 'candidate_artifacts', 'process_artifacts'.
+
+    Runs Claude synchronously (no BackgroundTask) so exceptions are caught and
+    logged — graceful degradation to raw-content embedding if Claude fails.
+    """
+    allowed_tables = {'artifacts', 'candidate_artifacts', 'process_artifacts'}
+    if table not in allowed_tables:
+        raise HTTPException(status_code=400, detail=f"Invalid table: {table}")
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        result = await process_artifact_fn(supabase, artifact_id, table, ANTHROPIC_API_KEY)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[/api/artifacts/process] Error for {artifact_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error processing artifact: {str(e)}")
+
+
+async def _backfill_all_processing(supabase) -> None:
+    """Background task: run process_artifact for all artifacts with null summary."""
+    for table in ('artifacts', 'candidate_artifacts', 'process_artifacts'):
+        try:
+            resp = supabase.table(table).select('id').is_('summary', 'null').execute()
+            ids = [row['id'] for row in (resp.data or [])]
+            print(f"[backfill/process] {table}: {len(ids)} artifacts to process")
+            for artifact_id in ids:
+                try:
+                    await process_artifact_fn(supabase, artifact_id, table, ANTHROPIC_API_KEY)
+                    print(f"[backfill/process] OK: {table}/{artifact_id}")
+                except Exception as e:
+                    print(f"[backfill/process] FAIL: {table}/{artifact_id}: {e}")
+        except Exception as e:
+            print(f"[backfill/process] query failed for {table}: {e}")
+
+
+@app.post("/api/brain/process-artifacts")
+async def backfill_processing(
+    user_id: str = Body(..., embed=True),
+    background_tasks: BackgroundTasks = None,
+):
+    """
+    Admin endpoint: queue summary+tag generation for all artifacts with null summary.
+    Useful for backfilling artifacts uploaded before this feature shipped.
+    Mirrors the pattern of /api/brain/generate-embeddings.
+    """
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    if background_tasks is None:
+        background_tasks = BackgroundTasks()
+    background_tasks.add_task(_backfill_all_processing, supabase)
+    return {"status": "queued", "message": "Artifact processing backfill queued for all tables"}
 
 
 async def _backfill_all_embeddings(supabase) -> None:

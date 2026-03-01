@@ -7,8 +7,8 @@ Queries:
   - process_artifacts — if interviewer_id is provided
 
 Returns a normalized list where each artifact has entity metadata attached.
-Metadata stub fields (summary, tags, key_topics) will be populated by the future
-Artifact Processing Pipeline. For now they are None / empty.
+summary and tags are populated by the Artifact Processing Pipeline on upload.
+key_topics is derived in-memory from tags (no separate DB column needed).
 """
 
 
@@ -27,19 +27,14 @@ def _build_metadata_stub(artifact: dict) -> dict:
     """
     Build the metadata dict for an artifact.
 
-    summary and tags are future stubs — always None/empty until the
-    Artifact Processing Pipeline is implemented. key_topics is hardcoded
-    empty for the same reason.
-
-    TODO: When artifact processing pipeline ships:
-      - summary: auto-generated one-paragraph content summary
-      - tags: auto-extracted topic/keyword tags
-      - key_topics: key concepts extracted from the artifact text
+    summary and tags are populated by the Artifact Processing Pipeline on upload.
+    key_topics is derived from tags in-memory (no separate DB column needed).
     """
+    tags = artifact.get('tags') or []
     return {
-        'summary': artifact.get('summary'),   # TODO: artifact processing pipeline
-        'tags': artifact.get('tags') or [],   # TODO: artifact processing pipeline
-        'key_topics': [],                     # TODO: artifact processing pipeline
+        'summary': artifact.get('summary'),
+        'tags': tags,
+        'key_topics': tags,
     }
 
 

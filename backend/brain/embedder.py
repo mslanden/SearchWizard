@@ -45,11 +45,11 @@ def cosine_similarity(a: list, b: list) -> float:
 def build_artifact_embed_text(artifact: dict) -> str:
     """
     Combine artifact fields into a single string for embedding.
-    Priority order: name → type fields → summary (future stub) → processed_content.
-    Falls back to "name type" when processed_content is null (e.g. images).
+    Priority order: name → type fields → summary → tags → processed_content.
+    Falls back to name + type when processed_content is null (e.g. images).
 
-    NOTE: When the Artifact Processing Pipeline ships, add 'key_topics' field here
-    as a high-signal prefix before processed_content.
+    summary and tags are populated by the Artifact Processing Pipeline on upload.
+    When present they act as the primary semantic signal before the raw content.
     """
     parts = []
     if artifact.get('name'):
@@ -58,7 +58,6 @@ def build_artifact_embed_text(artifact: dict) -> str:
         parts.append(f"Type: {artifact['artifact_type']}")
     if artifact.get('document_type'):
         parts.append(f"Document type: {artifact['document_type']}")
-    # Future stub: summary and tags will be populated by the Artifact Processing Pipeline
     if artifact.get('summary'):
         parts.append(f"Summary: {artifact['summary']}")
     if artifact.get('tags'):

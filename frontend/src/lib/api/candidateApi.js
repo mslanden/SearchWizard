@@ -144,13 +144,13 @@ export const candidateApi = {
       // Increment candidate artifact count
       await incrementCount('candidates', 'id', candidateId, 'artifacts_count');
 
-      // Fire-and-forget: generate embedding for semantic artifact retrieval (Project Brain)
-      const _embedUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://searchwizard-production.up.railway.app';
-      fetch(`${_embedUrl}/api/artifacts/embed`, {
+      // Fire-and-forget: enrich artifact (summary + tags) and generate embedding (Project Brain)
+      const _processUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://searchwizard-production.up.railway.app';
+      fetch(`${_processUrl}/api/artifacts/process`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ artifact_id: data.id, table: 'candidate_artifacts', user_id: user.id }),
-      }).catch(err => console.warn('Embedding generation failed (non-critical):', err));
+      }).catch(err => console.warn('Artifact processing failed (non-critical):', err));
 
       return transformDatabaseObject(data);
     } catch (error) {

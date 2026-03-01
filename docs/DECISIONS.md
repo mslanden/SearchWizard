@@ -380,7 +380,52 @@ uses them when present; falls back to raw `processed_content` when absent.
   Applied as a separate fix. Always run the full Migration 7 block on new environments (see SETUP.md).
 
 **Future path:**
-- Artifact Processing Pipeline: auto-generate `summary` and `tags` for each artifact on upload;
-  use summary as the primary embedding signal for higher-quality retrieval
+- ✅ Artifact Processing Pipeline shipped (Mar 2026) — see ADR-013
 - Editable prompt in `PromptPreviewModal`: allow user to override Brain-assembled prompt before generation
 - Candidate → Role → Competency multi-hop graph traversal (extend `brain/knowledge_graph.py`)
+
+---
+
+## ADR-013 — Artifact Processing Pipeline: Claude Tool Use, Sync Endpoint (Mar 2026)
+
+**Status:** Active (on staging)
+
+**Decision:**
+On artifact upload, fire-and-forget a call to `POST /api/artifacts/process` (replacing the
+old `/api/artifacts/embed` call). The endpoint runs `pipeline/artifact_processor.py` which:
+1. Calls Claude Sonnet 4.6 (tool use) to generate a `summary` (80-150 word semantically dense
+   paragraph) and extract `tags` (5-15 specific hyphenated keywords)
+2. Stores both in the existing `summary TEXT` / `tags TEXT[]` columns (no new migrations needed)
+3. Re-generates the 1536-dim OpenAI embedding from the enriched text
+   (`name + type + summary + tags + processed_content`) and stores it
+
+The artifact's `description` field (user-provided at upload time) is included in the Claude
+prompt as the highest-priority context signal — it often clarifies an artifact's role in the
+engagement in ways the raw content alone cannot (e.g. "This is the hiring manager for this role").
+
+**Key choices and reasoning:**
+
+| Choice | Alternative | Reason |
+|--------|-------------|--------|
+| Claude Sonnet 4.6 (not Haiku) | Haiku (faster, cheaper) | Summary quality is the primary embedding signal; poor summaries cascade into poor artifact-section matching and degrade document accuracy. One call per artifact lifetime justifies the cost. |
+| Tool use (`artifact_enrichment` tool) | Plain JSON prompt | Matches `semantic_analyzer.py` pattern. Enforces schema contract; eliminates JSON parse fragility. |
+| Synchronous async within endpoint (no BackgroundTask) | FastAPI BackgroundTask | BackgroundTask swallows exceptions silently (known project gotcha). Sync means failures surface in Railway logs and graceful degradation is deterministic. Frontend is fire-and-forget so endpoint latency is invisible. |
+| `key_topics` derived from `tags` in-memory | New DB column | Zero migration. The `artifact_fetcher.py` stub already existed; filling it from `tags` resolves the TODO without schema change. |
+| Graceful degradation on Claude failure | Block artifact until processing succeeds | Upload flow must remain reliable. Embedding from raw content is better than no embedding. |
+| Sequential backfill (`POST /api/brain/process-artifacts`) | Concurrent backfill | Sequential processing respects Anthropic rate limits at current artifact volumes (<500 rows). |
+
+**Files introduced:**
+- `backend/pipeline/artifact_processor.py` (new module)
+
+**Files modified:**
+- `backend/api.py` — import + `POST /api/artifacts/process` + `POST /api/brain/process-artifacts`
+- `backend/brain/artifact_fetcher.py` — `key_topics` derived from `tags`; TODO comments removed
+- `backend/brain/embedder.py` — stale NOTE comment removed
+- `frontend/src/lib/api/projectApi.js` — fire-and-forget target updated (2 locations)
+- `frontend/src/lib/api/candidateApi.js` — fire-and-forget target updated
+- `frontend/src/lib/api/interviewerApi.js` — fire-and-forget target updated
+
+**No DB migrations required.**
+`summary TEXT` and `tags TEXT[]` columns already exist on `artifacts`, `candidate_artifacts`,
+and `process_artifacts` (added in Migration 8 as stubs). The Supabase Python client
+serialises `list[str]` → `TEXT[]` natively.
