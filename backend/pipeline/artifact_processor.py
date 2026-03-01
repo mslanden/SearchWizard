@@ -12,11 +12,8 @@ Pattern follows semantic_analyzer.py exactly: AsyncAnthropic, tool use, same res
 parsing loop.
 """
 
-import logging
 from anthropic import AsyncAnthropic
 from brain.embedder import embed_and_store
-
-logger = logging.getLogger(__name__)
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
 ARTIFACT_PROCESS_MAX_TOKENS = 1024   # summary + 15 tags fits comfortably
@@ -142,11 +139,11 @@ async def _call_claude_enrich(
             if block.type == "tool_use" and block.name == "artifact_enrichment":
                 return block.input
 
-        logger.warning("artifact_processor: Claude did not return an artifact_enrichment tool call")
+        print("[artifact_processor] Claude did not return an artifact_enrichment tool call")
         return None
 
     except Exception as e:
-        logger.error(f"artifact_processor: Claude call failed: {e}")
+        print(f"[artifact_processor] Claude call failed: {e}")
         return None
 
 
@@ -175,18 +172,18 @@ async def process_artifact(
     try:
         art_resp = supabase.table(table).select('*').eq('id', artifact_id).single().execute()
     except Exception as e:
-        logger.error(f"artifact_processor: failed to fetch {table}/{artifact_id}: {e}")
+        print(f"[artifact_processor] Failed to fetch {table}/{artifact_id}: {e}")
         return {'success': False, 'summary_generated': False, 'artifact_id': artifact_id, 'table': table}
 
     artifact = art_resp.data
     if not artifact:
-        logger.warning(f"artifact_processor: {table}/{artifact_id} not found")
+        print(f"[artifact_processor] {table}/{artifact_id} not found")
         return {'success': False, 'summary_generated': False, 'artifact_id': artifact_id, 'table': table}
 
     # If there is no text content (e.g. image-only upload), skip Claude and just embed
     processed_content = artifact.get('processed_content') or ''
     if not processed_content.strip():
-        logger.info(f"artifact_processor: {artifact_id} has no processed_content — embedding from name+type only")
+        print(f"[artifact_processor] {artifact_id} has no processed_content — embedding from name+type only")
         await embed_and_store(supabase, artifact_id, table, artifact)
         return {'success': True, 'summary_generated': False, 'artifact_id': artifact_id, 'table': table}
 
@@ -202,7 +199,7 @@ async def process_artifact(
 
     if result is None:
         # Claude failed — fall back to embedding from raw content only
-        logger.warning(f"artifact_processor: Claude enrichment failed for {artifact_id}, falling back to raw embedding")
+        print(f"[artifact_processor] Claude enrichment failed for {artifact_id} — falling back to raw embedding")
         await embed_and_store(supabase, artifact_id, table, artifact)
         return {'success': True, 'summary_generated': False, 'artifact_id': artifact_id, 'table': table}
 
@@ -213,8 +210,7 @@ async def process_artifact(
     try:
         supabase.table(table).update({'summary': summary, 'tags': tags}).eq('id', artifact_id).execute()
     except Exception as e:
-        logger.error(f"artifact_processor: failed to store summary/tags for {artifact_id}: {e}")
-        # Still attempt embedding from enriched data even if DB write fails
+        print(f"[artifact_processor] Failed to store summary/tags for {artifact_id}: {e}")
         await embed_and_store(supabase, artifact_id, table, artifact)
         return {'success': True, 'summary_generated': False, 'artifact_id': artifact_id, 'table': table}
 
@@ -222,5 +218,5 @@ async def process_artifact(
     enriched = {**artifact, 'summary': summary, 'tags': tags}
     await embed_and_store(supabase, artifact_id, table, enriched)
 
-    logger.info(f"artifact_processor: enriched {table}/{artifact_id} — {len(tags)} tags")
+    print(f"[artifact_processor] OK: {table}/{artifact_id} — {len(tags)} tags generated")
     return {'success': True, 'summary_generated': True, 'artifact_id': artifact_id, 'table': table}
