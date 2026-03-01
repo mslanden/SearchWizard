@@ -368,9 +368,19 @@ selection and a "Preview Prompt" mode.
 the future **Artifact Processing Pipeline** populates them. The Brain checks these fields and
 uses them when present; falls back to raw `processed_content` when absent.
 
+**Implementation notes (bugs found and fixed during initial deployment):**
+- `POST /api/templates/v3` was missing `status_code=202` in the FastAPI decorator, causing the
+  frontend (which checks `response.status === 202`) to fall through to the V2 error path. Fixed
+  by adding `status_code=202` to the decorator (`afaa2c8`).
+- pgvector columns returned by Supabase REST API arrive as JSON strings (`"[-0.029,...]"`), not
+  Python lists. `cosine_similarity` (numpy) cannot accept a string. Fixed by adding `_parse_embedding()`
+  helper in `relevance_ranker.py` that calls `json.loads()` when the value is a string (`65c0079`).
+- Migration 7 (`processing_error`, `processing_started_at`, `processing_completed_at`) was only
+  partially applied on the shared Supabase project — pipeline crashed silently on its first DB write.
+  Applied as a separate fix. Always run the full Migration 7 block on new environments (see SETUP.md).
+
 **Future path:**
 - Artifact Processing Pipeline: auto-generate `summary` and `tags` for each artifact on upload;
   use summary as the primary embedding signal for higher-quality retrieval
 - Editable prompt in `PromptPreviewModal`: allow user to override Brain-assembled prompt before generation
 - Candidate → Role → Competency multi-hop graph traversal (extend `brain/knowledge_graph.py`)
-- Admin backfill: call `POST /api/brain/generate-embeddings` to generate embeddings for all existing artifacts

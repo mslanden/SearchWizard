@@ -1,4 +1,4 @@
-# SearchWizard — Project Brain
+# SearchWizard — Project Overview
 
 > Central reference document. Keep this up to date. Every AI session and every
 > human developer should read this before making changes.
@@ -201,6 +201,8 @@ a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB 
 - Admin approval system (pending users, approve/deny, role management)
 - Dark mode
 - Staging environment (Railway + Vercel) — set up Feb 2026
+- Document DNA Blueprint Pipeline (V3) — async multi-stage golden example analysis (Feb 2026)
+- Project Brain V3 document generation — semantic artifact retrieval, section-aware prompt assembly, candidate/interviewer targeting, Preview Prompt mode (Feb 2026)
 
 ### Known Technical Debt
 - Knowledge base files (`company-overview.txt`, `product-specs.txt`) are template
@@ -227,20 +229,23 @@ a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB 
 3. ✅ Code review cleanup — dead code deleted, constants extracted, components consolidated (Feb 2026, commit `86f4227`)
 4. ✅ Document DNA Blueprint Pipeline (V3) — async multi-stage golden example analysis (Feb 2026)
 5. ✅ Project Brain — semantic artifact retrieval for V3 document generation (Feb 2026)
-   - Apply **Migration 8** to Supabase (pgvector + embedding columns) — see `docs/SETUP.md`
-   - Backfill existing artifacts: call `POST /api/brain/generate-embeddings` (admin endpoint)
+   - ✅ Migration 8 applied (pgvector + embedding columns on all artifact tables)
+   - ✅ Existing artifact embeddings backfilled via `POST /api/brain/generate-embeddings`
+   - ✅ End-to-end V3 generation tested and verified on staging
 6. Review and act on the open CVE security patch PR
 7. Make and test significant UI/feature changes on `staging` before pushing to `main`
 8. Artifact Processing Pipeline — auto-generate `summary` + `tags` for each artifact on upload
    (completes the metadata stubs in `brain/artifact_fetcher.py`)
-9. Fix Bug #22 (Generate New Document dropdown lists file names instead of types)
-10. Fix Bug #35 (company artifact URL upload fails with pattern mismatch error)
-11. Editable prompt in `PromptPreviewModal` — allow user to override Brain-assembled prompt before generation
-12. Feature #11: Download output documents — HTML preview + DOCX on-demand
-13. Separate Supabase projects (staging vs production) — **required before public launch**
-14. Populate knowledge base files with real Agentica AI content
-15. Remove `WriterAgent` file (`backend/agents/writer_agent.py`) — no longer imported
-16. Centralise the Claude model string into `ANTHROPIC_MODEL` constant or env var
+9. Fix Bug #36 (BlueprintViewer popup closes on any click — tabs and scroll inaccessible)
+10. Fix Bug #37 (old V2 popup flashes briefly before V3 popup appears on "Generate New")
+11. Fix Bug #22 (Generate New Document dropdown lists file names instead of types)
+12. Fix Bug #35 (company artifact URL upload fails with pattern mismatch error)
+13. Editable prompt in `PromptPreviewModal` — allow user to override Brain-assembled prompt before generation
+14. Feature #11: Download output documents — HTML preview + DOCX on-demand
+15. Separate Supabase projects (staging vs production) — **required before public launch**
+16. Populate knowledge base files with real Agentica AI content
+17. Remove `WriterAgent` file (`backend/agents/writer_agent.py`) — no longer imported
+18. Centralise the Claude model string into `ANTHROPIC_MODEL` constant or env var
 
 ### Open Bug Log (Staging — Feb 2026)
 
@@ -275,6 +280,8 @@ a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB 
 | 31 | Artifact tables: no visible scrollbar when content overflows — rightmost columns (including delete button) are cut off and not obviously reachable | Fixed in `8ce0b58` | Changed `overflow-x-auto` to `overflow-x-scroll` in `ArtifactsSection.tsx`; wrapped the `<table>` in `<div className="overflow-x-scroll">` in `CandidatesSection.jsx` and `InterviewersSection.jsx` (those had no wrapper at all) — scrollbar is now always visible |
 | 30 | Adding a Company artifact via URL input fails — "Source URL is required for URL artifacts" | Fixed in `8ce0b58` | `UnifiedArtifactUploadPopup.tsx` was spreading `{ url: url.trim() }` for URL input type, but `projectApi.addCompanyArtifact`/`addRoleArtifact` check `artifactData.sourceUrl`. Fixed by changing the spread key from `url` to `sourceUrl` — matching the `ArtifactUploadData` type definition |
 | 35 | Adding a Company artifact via URL input fails — "The string did not match the expected pattern" | Open | Distinct from Bug #30 (which was fixed). This browser-side validation error occurs before the API call. Likely a Supabase client-side URL format check rejecting certain URL patterns. Not yet investigated. |
+| 36 | BlueprintViewer popup closes on any click — user cannot switch tabs (Layout / Visual Style) or scroll | Open | Click handler on the modal backdrop captures all clicks including those on inner content. Do not fix until scoped. |
+| 37 | Clicking "Generate New" briefly flashes the old V2 popup before the V3 popup appears | Open | Both V2 and V3 popup components may be mounted simultaneously during the transition; V2 renders first before V3 state is ready. Do not fix until scoped. |
 
 ---
 

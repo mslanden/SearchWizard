@@ -216,6 +216,9 @@ CREATE POLICY "Users can delete own process artifacts"
 ALTER TABLE process_artifacts ENABLE ROW LEVEL SECURITY;
 
 -- 7. Add blueprint pipeline columns to golden_examples (V3 — applied Feb 2026)
+-- NOTE: On the shared Supabase project, only blueprint + status were applied initially.
+-- processing_error, processing_started_at, processing_completed_at were missing and
+-- applied as a separate fix (Feb 2026). Always run the full block below on new environments.
 ALTER TABLE golden_examples
   ADD COLUMN IF NOT EXISTS blueprint JSONB DEFAULT NULL,
   ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'ready',
@@ -254,6 +257,14 @@ CREATE INDEX IF NOT EXISTS process_artifacts_embedding_idx
 
 `summary` and `tags` are stubs — NULL until the future Artifact Processing Pipeline populates
 them. `embedding` is populated on each artifact upload via `/api/artifacts/embed`.
+
+After applying Migration 8, backfill embeddings for all existing artifacts by calling:
+```bash
+curl -X POST https://<your-backend>/api/brain/generate-embeddings \
+  -H 'Content-Type: application/json' \
+  -d '{"user_id":"<admin_user_id>"}'
+```
+This queues a background job and returns `{"status":"queued"}` immediately.
 
 ---
 
