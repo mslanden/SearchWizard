@@ -364,7 +364,7 @@ Return ONLY the template prompt text that will be used for document generation."
 # V3 Template creation — async Document DNA pipeline
 # ---------------------------------------------------------------------------
 
-@app.post("/api/templates/v3")
+@app.post("/api/templates/v3", status_code=202)
 async def create_template_v3(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
