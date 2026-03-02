@@ -7,6 +7,7 @@ section hierarchy, intent, allowed element types, and rhetorical patterns.
 Uses Claude with tool-use (function calling) to enforce structured JSON output.
 """
 
+import base64
 import json
 from typing import Any
 
@@ -14,6 +15,10 @@ from typing import Any
 CLAUDE_MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 12000
 MAX_TEXT_CHARS = 50000  # max condensed doc text sent to Claude (Sonnet 4.6 has 200K context)
+
+# Vision rendering — used when the PDF has too little extractable text
+_VISION_PAGES = 8          # render up to 8 pages (covers a typical 8–10 page role spec)
+_VISION_RENDER_SCALE = 1.0 # 72 DPI — sufficient for Claude to read headings
 
 # Heading heuristic thresholds
 _HEADING_MIN_SIZE_PT = 13.0
@@ -253,6 +258,25 @@ def _is_heading(block: dict) -> bool:
     return False
 
 
+def _render_pdf_pages_for_vision(file_bytes: bytes, n_pages: int = _VISION_PAGES) -> list:
+    """
+    Render the first n_pages of a PDF to base64-encoded PNGs using PyMuPDF.
+    Returns a list of base64 strings (one per page).
+    Mirrors visual_style_analyzer._render_pages_to_base64().
+    """
+    import fitz
+    doc = fitz.open(stream=file_bytes, filetype="pdf")
+    images = []
+    mat = fitz.Matrix(_VISION_RENDER_SCALE, _VISION_RENDER_SCALE)
+    for i, page in enumerate(doc):
+        if i >= n_pages:
+            break
+        pix = page.get_pixmap(matrix=mat)
+        images.append(base64.b64encode(pix.tobytes("png")).decode("utf-8"))
+    doc.close()
+    return images
+
+
 def _condense_idm_to_text(idm: dict) -> str:
     """
     Flatten IDM pages/blocks into a structured text representation for semantic analysis.
@@ -323,7 +347,13 @@ def _condense_idm_to_text(idm: dict) -> str:
     return condensed
 
 
-async def analyze_semantic(idm: dict, client, document_type: str = "") -> dict:
+async def analyze_semantic(
+    idm: dict,
+    client,
+    document_type: str = "",
+    file_bytes: bytes = None,
+    source_format: str = "",
+) -> dict:
     """
     Stage B entry point.
 
@@ -331,6 +361,8 @@ async def analyze_semantic(idm: dict, client, document_type: str = "") -> dict:
         idm:            Intermediate Document Model dict from Stage A.
         client:         anthropic.AsyncAnthropic instance.
         document_type:  Golden example type slug, e.g. "role_specification".
+        file_bytes:     Raw file bytes — required for PDF Vision rendering.
+        source_format:  "pdf" | "docx" | "image" (from IDM metadata).
 
     Returns:
         content_structure_spec dict with a 'sections' list.
@@ -373,13 +405,48 @@ async def analyze_semantic(idm: dict, client, document_type: str = "") -> dict:
         else:
             toc_section = ""
 
-        user_message = (
+        # For PDF files, render pages as images so Claude can see decorative headings
+        # that are not captured in the text extraction (common in InDesign-exported PDFs).
+        page_images = []
+        if source_format == "pdf" and file_bytes:
+            try:
+                page_images = _render_pdf_pages_for_vision(file_bytes)
+                print(f"Semantic analyzer: rendered {len(page_images)} pages for vision analysis")
+            except Exception as e:
+                print(f"Semantic analyzer: page rendering failed ({e}), using text-only")
+
+        # Build the user message — multimodal when images are available
+        intro = (
             f"Analyse the following document and call the 'document_structure' tool "
             f"to return its complete section hierarchy.\n\n"
             f"{doc_type_line}"
             f"{toc_section}"
-            f"DOCUMENT TEXT:\n{condensed_text}"
         )
+
+        if page_images:
+            intro += (
+                "DOCUMENT PAGES (images — primary source for heading identification):\n"
+                "The page images below show the full visual layout of the document. "
+                "Large, prominently displayed text that introduces a new topic is a section "
+                "heading even if it does not appear in the extracted text below. "
+                "Use the images as your primary source for identifying section structure.\n\n"
+            )
+            user_content = [{"type": "text", "text": intro}]
+            for img_b64 in page_images:
+                user_content.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": img_b64,
+                    },
+                })
+            user_content.append({
+                "type": "text",
+                "text": f"EXTRACTED TEXT (supplementary — may be incomplete for design-heavy PDFs):\n{condensed_text}",
+            })
+        else:
+            user_content = intro + f"DOCUMENT TEXT:\n{condensed_text}"
 
         response = await client.messages.create(
             model=CLAUDE_MODEL,
@@ -387,7 +454,7 @@ async def analyze_semantic(idm: dict, client, document_type: str = "") -> dict:
             system=_SYSTEM_PROMPT,
             tools=[_STRUCTURE_TOOL],
             tool_choice={"type": "tool", "name": "document_structure"},
-            messages=[{"role": "user", "content": user_message}],
+            messages=[{"role": "user", "content": user_content}],
         )
 
         # Extract tool use result
