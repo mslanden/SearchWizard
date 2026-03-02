@@ -100,22 +100,25 @@ _SYSTEM_PROMPT = """You are a document structure analyst specialising in profess
 
 Your task is to analyse the structured text of a document and call the 'document_structure' tool to return a precise, hierarchical representation of its content architecture.
 
-The document text uses this format:
-- '--- PAGE N ---' marks a new page boundary
-- '[H {size}pt {bold?}] {heading text}' marks a detected heading with its font size
-- All other lines are body text
+The document text shows each block prefixed with its font size: '[12.5pt] text content'. Page boundaries are marked '--- PAGE N ---'.
+
+How to identify headings:
+- First, identify the body text size — the most common font size in the document, typically 9–12pt.
+- Any block whose font size is notably larger than the body text (roughly 1.4× or more) is a section heading.
+- Larger sizes = higher-level headings (depth 1); smaller oversized sizes = sub-headings (depth 2 or 3).
+- Short bold lines at body size may also be sub-headings — use content context to decide.
+- Pages with no oversized font blocks contain only body text belonging to the previous heading's section.
 
 Rules (follow these strictly):
-1. Create exactly one section entry for EVERY heading line (lines starting with '[H '). Never merge, skip, or consolidate headings.
+1. Create exactly one section entry for EVERY identified heading. Never merge or skip headings.
 2. Use the EXACT heading text as the section 'title' — do not paraphrase or rename it.
-3. Determine 'depth' from font size: scan all heading sizes in the document, then assign depth 1 to the largest, depth 2 to the next, depth 3 to smaller sizes. If two headings share a size, give them the same depth.
-4. A heading that appears after a larger heading on the same or adjacent page is likely a child_section of that larger heading — nest it accordingly.
-5. Cover page or introductory headings (title, subtitle) should be depth 1 sections.
-6. A document with 8-10 pages should typically yield at least 8-12 distinct sections — if you find fewer than 5 heading markers, re-examine the text carefully.
-7. 'intent' must be a specific lowercase phrase (not generic) — e.g. 'company overview', 'role mandate', 'reporting structure', 'candidate requirements', 'competency profile', 'compensation', 'firm overview'. Never use 'content' alone as intent.
-8. 'rhetorical_pattern' describes how content flows within the section (e.g. 'context → key facts → relevance', 'criteria → must-have → nice-to-have').
-9. 'micro_template' is a practical instruction a writer can follow to produce similar content for a new engagement (e.g. 'Open with a 2-sentence company description. Follow with key facts: size, market position, ownership structure.').
-10. Always call the tool — never return plain text."""
+3. Determine 'depth' from relative font size: largest headings = depth 1, next tier = depth 2, smaller = depth 3.
+4. A heading that follows a larger heading on the same or adjacent page is a child_section of that larger heading.
+5. A document with 8–10 pages should yield at least 8–12 sections — if you count fewer than 5, re-examine the font sizes carefully.
+6. 'intent' must be a specific lowercase phrase — e.g. 'company overview', 'role mandate', 'reporting structure', 'candidate requirements', 'competency profile', 'compensation', 'firm overview'. Never use just 'content'.
+7. 'rhetorical_pattern' describes how content flows within the section (e.g. 'context → key facts → relevance', 'criteria → must-have → nice-to-have').
+8. 'micro_template' is a practical instruction a writer can follow to produce similar content for a new engagement.
+9. Always call the tool — never return plain text."""
 
 
 def _is_heading(block: dict) -> bool:
@@ -137,14 +140,17 @@ def _condense_idm_to_text(idm: dict) -> str:
     """
     Flatten IDM pages/blocks into a structured text representation for semantic analysis.
 
-    Format used:
-    - '--- PAGE N ---' marks each page boundary so Claude can reason about page-level structure.
-    - '[H {size_pt}pt bold?] {text}' marks a detected heading with its font size so Claude can
-      determine hierarchy (larger font = higher depth level).
-    - All other text is emitted as plain body text.
+    Every block is prefixed with its font size so Claude can determine heading hierarchy
+    from the size distribution itself, without relying on a pre-classification heuristic.
+
+    Format:
+    - '--- PAGE N ---' marks each page boundary
+    - '[{size_pt}pt] {text}' for blocks with known font size
+    - '{text}' (no prefix) for blocks without style info (e.g. extracted tables)
     """
     parts = []
     char_count = 0
+    unique_sizes: set = set()
 
     for page in idm.get("pages", []):
         page_num = page.get("page_number", "?")
@@ -155,13 +161,11 @@ def _condense_idm_to_text(idm: dict) -> str:
             if not text:
                 continue
 
-            if _is_heading(block):
-                style = block.get("style") or {}
-                size = style.get("font_size_pt")
-                weight = style.get("font_weight", "normal")
-                size_str = f"{size}pt " if size else ""
-                weight_str = "bold " if weight == "bold" else ""
-                page_parts.append(f"[H {size_str}{weight_str}] {text}")
+            style = block.get("style")
+            size = style.get("font_size_pt") if style else None
+            if size:
+                unique_sizes.add(size)
+                page_parts.append(f"[{size}pt] {text}")
             else:
                 page_parts.append(text)
 
@@ -177,7 +181,13 @@ def _condense_idm_to_text(idm: dict) -> str:
         if char_count >= MAX_TEXT_CHARS:
             break
 
-    return "\n".join(parts)
+    condensed = "\n".join(parts)
+    print(
+        f"Semantic analyzer: condensed text {len(condensed)} chars, "
+        f"{len(parts)} blocks across pages, "
+        f"unique font sizes: {sorted(unique_sizes)}"
+    )
+    return condensed
 
 
 async def analyze_semantic(idm: dict, client, document_type: str = "") -> dict:
