@@ -140,6 +140,21 @@ def _build_idm_from_pdf(file_bytes: bytes) -> dict:
             "blocks": blocks_data,
         })
 
+    # Extract PDF outline/bookmarks as authoritative section titles.
+    # Professional PDFs (InDesign, Word) almost always embed a bookmark tree.
+    # Returns [[level, title, page_number], ...] — empty list if none.
+    toc = []
+    try:
+        raw_toc = doc.get_toc()
+        toc = [{"level": lvl, "title": title, "page": pg}
+               for lvl, title, pg in raw_toc if title and title.strip()]
+        if toc:
+            print(f"PDF TOC extracted: {len(toc)} entries")
+        else:
+            print("PDF has no embedded TOC/bookmarks — will rely on font-size inference")
+    except Exception as e:
+        print(f"TOC extraction skipped: {e}")
+
     doc.close()
 
     is_scanned = total_chars < _SCANNED_CHAR_THRESHOLD
@@ -157,6 +172,7 @@ def _build_idm_from_pdf(file_bytes: bytes) -> dict:
             "margins": None,  # computed by layout analyzer from block positions
             "is_scanned": is_scanned,
             "ocr_used": is_scanned,
+            "toc": toc,  # embedded PDF bookmarks; empty list if none
         },
         "pages": pages_data,
     }

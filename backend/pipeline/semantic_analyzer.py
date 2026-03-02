@@ -266,9 +266,25 @@ def _condense_idm_to_text(idm: dict) -> str:
                 continue
 
             style = block.get("style")
-            size = style.get("font_size_pt") if style else None
+            reported_size = style.get("font_size_pt") if style else None
+
+            # Derive font size from bounding-box geometry as a fallback.
+            # Design-heavy PDFs (InDesign exports) often scale text frames after
+            # embedding, so PyMuPDF reports the base font size (e.g. 10pt) rather
+            # than the rendered size (e.g. 40pt). Bbox height ÷ line count ÷ 1.2
+            # (typical leading factor) gives the approximate rendered font size.
+            bbox = block.get("bbox") or {}
+            lines = block.get("lines") or []
+            num_lines = max(len(lines), 1)
+            bbox_h = (bbox.get("y1", 0) - bbox.get("y0", 0))
+            bbox_size = round(bbox_h / num_lines / 1.2, 1) if bbox_h > 4 else None
+
+            # Use the larger of the two estimates. For correct PDFs they agree;
+            # for transformed PDFs the bbox estimate reveals the true rendered size.
+            size = max(reported_size or 0, bbox_size or 0) or None
+
             if size:
-                unique_sizes.add(size)
+                unique_sizes.add(round(size, 1))
                 page_parts.append(f"[{size}pt] {text}")
             else:
                 page_parts.append(text)
@@ -325,10 +341,30 @@ async def analyze_semantic(idm: dict, client, document_type: str = "") -> dict:
             }
 
         doc_type_line = f"DOCUMENT TYPE: {document_type}\n\n" if document_type else ""
+
+        # Include PDF bookmarks/outline when available — these are the most reliable
+        # source of section titles and hierarchy, independent of font-size extraction.
+        toc = idm.get("metadata", {}).get("toc", [])
+        if toc:
+            indent = lambda lvl: "  " * (lvl - 1)
+            toc_lines = "\n".join(
+                f"{indent(e['level'])}{e['title']} (page {e['page']})"
+                for e in toc
+            )
+            toc_section = (
+                f"PDF TABLE OF CONTENTS (from embedded bookmarks — "
+                f"these are the authoritative section titles and hierarchy):\n"
+                f"{toc_lines}\n\n"
+            )
+            print(f"Semantic analyzer: using TOC with {len(toc)} entries as section guide")
+        else:
+            toc_section = ""
+
         user_message = (
             f"Analyse the following document and call the 'document_structure' tool "
             f"to return its complete section hierarchy.\n\n"
             f"{doc_type_line}"
+            f"{toc_section}"
             f"DOCUMENT TEXT:\n{condensed_text}"
         )
 
