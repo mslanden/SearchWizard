@@ -16,6 +16,7 @@ import anthropic
 from supabase import create_client
 
 from pipeline.preprocessor import build_idm
+from pipeline.ocr_enricher import enrich_idm_with_vision_ocr
 from pipeline.semantic_analyzer import analyze_semantic
 from pipeline.layout_analyzer import analyze_layout
 from pipeline.visual_style_analyzer import analyze_visual_style
@@ -56,6 +57,12 @@ async def run_pipeline(
         f"[{golden_example_id}] IDM built: {idm['page_count']} pages, "
         f"scanned={idm['metadata']['is_scanned']}"
     )
+
+    # Stage A.5 — PDF Text Enrichment (async; triggered only when text is sparse)
+    # Renders pages via Vision OCR so all downstream stages see the complete text.
+    if source_format == "pdf":
+        print(f"[{golden_example_id}] Stage A.5: checking PDF text density")
+        idm = await enrich_idm_with_vision_ocr(idm, file_bytes, client)
 
     # Stages B, C, D — concurrent
     print(f"[{golden_example_id}] Stages B/C/D: running concurrently")
