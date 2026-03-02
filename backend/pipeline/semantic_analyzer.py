@@ -12,7 +12,7 @@ from typing import Any
 
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
-MAX_TOKENS = 4000
+MAX_TOKENS = 8000
 MAX_TEXT_CHARS = 12000  # max condensed doc text sent to Claude
 
 # Heading heuristic thresholds
@@ -98,16 +98,24 @@ _STRUCTURE_TOOL = {
 
 _SYSTEM_PROMPT = """You are a document structure analyst specialising in professional recruitment and business documents.
 
-Your task is to analyse the text of a document and call the 'document_structure' tool to return a precise, structured representation of its content architecture.
+Your task is to analyse the structured text of a document and call the 'document_structure' tool to return a precise, hierarchical representation of its content architecture.
 
-Guidelines:
-- Identify every major section in the document, even if it has no explicit heading.
-- Infer the heading text from context when the document uses visual cues rather than explicit titles.
-- Assign 'depth' based on heading hierarchy: top-level sections = 1, sub-sections = 2, etc.
-- 'intent' should be a single lowercase word or short phrase describing the section's purpose.
-- 'rhetorical_pattern' should describe how content flows within the section (e.g. 'situation → complication → resolution').
-- 'micro_template' should be a practical instruction a writer can follow to produce similar content.
-- Always call the tool — never return plain text."""
+The document text uses this format:
+- '--- PAGE N ---' marks a new page boundary
+- '[H {size}pt {bold?}] {heading text}' marks a detected heading with its font size
+- All other lines are body text
+
+Rules (follow these strictly):
+1. Create exactly one section entry for EVERY heading line (lines starting with '[H '). Never merge, skip, or consolidate headings.
+2. Use the EXACT heading text as the section 'title' — do not paraphrase or rename it.
+3. Determine 'depth' from font size: scan all heading sizes in the document, then assign depth 1 to the largest, depth 2 to the next, depth 3 to smaller sizes. If two headings share a size, give them the same depth.
+4. A heading that appears after a larger heading on the same or adjacent page is likely a child_section of that larger heading — nest it accordingly.
+5. Cover page or introductory headings (title, subtitle) should be depth 1 sections.
+6. A document with 8-10 pages should typically yield at least 8-12 distinct sections — if you find fewer than 5 heading markers, re-examine the text carefully.
+7. 'intent' must be a specific lowercase phrase (not generic) — e.g. 'company overview', 'role mandate', 'reporting structure', 'candidate requirements', 'competency profile', 'compensation', 'firm overview'. Never use 'content' alone as intent.
+8. 'rhetorical_pattern' describes how content flows within the section (e.g. 'context → key facts → relevance', 'criteria → must-have → nice-to-have').
+9. 'micro_template' is a practical instruction a writer can follow to produce similar content for a new engagement (e.g. 'Open with a 2-sentence company description. Follow with key facts: size, market position, ownership structure.').
+10. Always call the tool — never return plain text."""
 
 
 def _is_heading(block: dict) -> bool:
@@ -127,40 +135,59 @@ def _is_heading(block: dict) -> bool:
 
 def _condense_idm_to_text(idm: dict) -> str:
     """
-    Flatten IDM pages/blocks into a condensed text representation for semantic analysis.
-    Headings are marked with '=== ... ===' to help Claude identify section boundaries.
+    Flatten IDM pages/blocks into a structured text representation for semantic analysis.
+
+    Format used:
+    - '--- PAGE N ---' marks each page boundary so Claude can reason about page-level structure.
+    - '[H {size_pt}pt bold?] {text}' marks a detected heading with its font size so Claude can
+      determine hierarchy (larger font = higher depth level).
+    - All other text is emitted as plain body text.
     """
     parts = []
     char_count = 0
 
     for page in idm.get("pages", []):
+        page_num = page.get("page_number", "?")
+        page_parts = []
+
         for block in page.get("blocks", []):
             text = block.get("text", "").strip()
             if not text:
                 continue
 
             if _is_heading(block):
-                parts.append(f"\n=== {text} ===\n")
+                style = block.get("style") or {}
+                size = style.get("font_size_pt")
+                weight = style.get("font_weight", "normal")
+                size_str = f"{size}pt " if size else ""
+                weight_str = "bold " if weight == "bold" else ""
+                page_parts.append(f"[H {size_str}{weight_str}] {text}")
             else:
-                parts.append(text)
+                page_parts.append(text)
 
             char_count += len(text)
             if char_count >= MAX_TEXT_CHARS:
-                parts.append("\n[...document truncated for analysis...]")
+                page_parts.append("[...document truncated for analysis...]")
                 break
+
+        if page_parts:
+            parts.append(f"--- PAGE {page_num} ---")
+            parts.extend(page_parts)
+
         if char_count >= MAX_TEXT_CHARS:
             break
 
     return "\n".join(parts)
 
 
-async def analyze_semantic(idm: dict, client) -> dict:
+async def analyze_semantic(idm: dict, client, document_type: str = "") -> dict:
     """
     Stage B entry point.
 
     Args:
-        idm:    Intermediate Document Model dict from Stage A.
-        client: anthropic.AsyncAnthropic instance.
+        idm:            Intermediate Document Model dict from Stage A.
+        client:         anthropic.AsyncAnthropic instance.
+        document_type:  Golden example type slug, e.g. "role_specification".
 
     Returns:
         content_structure_spec dict with a 'sections' list.
@@ -183,9 +210,11 @@ async def analyze_semantic(idm: dict, client) -> dict:
                 }]
             }
 
+        doc_type_line = f"DOCUMENT TYPE: {document_type}\n\n" if document_type else ""
         user_message = (
             f"Analyse the following document and call the 'document_structure' tool "
             f"to return its complete section hierarchy.\n\n"
+            f"{doc_type_line}"
             f"DOCUMENT TEXT:\n{condensed_text}"
         )
 

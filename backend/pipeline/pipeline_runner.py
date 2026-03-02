@@ -62,7 +62,7 @@ async def run_pipeline(
 
     async def _safe_semantic():
         try:
-            return await analyze_semantic(idm, client)
+            return await analyze_semantic(idm, client, document_type=document_type)
         except Exception as e:
             print(f"[{golden_example_id}] Stage B failed: {e}")
             return {"sections": [], "error": str(e)}
