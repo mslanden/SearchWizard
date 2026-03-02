@@ -21,39 +21,66 @@ function ErrorBadge({ message }) {
   );
 }
 
+function SectionField({ label, value }) {
+  if (!value) return null;
+  return (
+    <div className="text-xs text-gray-500 mt-0.5">
+      <span className="font-medium text-gray-600">{label}:</span> {value}
+    </div>
+  );
+}
+
 function SectionNode({ section, depth = 0 }) {
   const indent = depth * 16;
+  const children = section.child_sections || section.subsections || [];
   return (
     <div style={{ marginLeft: indent }} className="mb-3 border-l-2 border-gray-200 pl-3">
       <div className="text-sm font-semibold text-gray-800">
-        {section.section_id || section.title || `Section ${depth + 1}`}
+        {section.title || section.section_id || `Section ${depth + 1}`}
         {section.inferred && <InferredBadge />}
       </div>
-      {section.intent && (
-        <div className="text-xs text-gray-500 mt-0.5">
-          <span className="font-medium text-gray-600">Intent:</span> {section.intent}
-        </div>
-      )}
-      {section.rhetorical_pattern && (
-        <div className="text-xs text-gray-500">
-          <span className="font-medium text-gray-600">Pattern:</span> {section.rhetorical_pattern}
-        </div>
-      )}
-      {section.micro_template && (
-        <div className="text-xs text-gray-500">
-          <span className="font-medium text-gray-600">Template:</span> {section.micro_template}
-        </div>
-      )}
+      <SectionField label="Intent" value={section.intent} />
+      <SectionField label="Phrasing" value={section.phrasing_style} />
+      <SectionField label="Pattern" value={section.rhetorical_pattern} />
+      <SectionField label="Formatting" value={section.content_guidelines} />
+      <SectionField label="Template" value={section.micro_template} />
       {section.typography_role && (
         <div className="text-xs text-gray-500">
           <span className="font-medium text-gray-600">Typography:</span>{' '}
           <code className="bg-gray-100 rounded px-1">{section.typography_role}</code>
         </div>
       )}
-      {Array.isArray(section.subsections) &&
-        section.subsections.map((sub, i) => (
+      {Array.isArray(children) &&
+        children.map((sub, i) => (
           <SectionNode key={sub.section_id || i} section={sub} depth={depth + 1} />
         ))}
+    </div>
+  );
+}
+
+// ─── Document Profile ────────────────────────────────────────────────────────
+
+function DocumentProfile({ profile }) {
+  if (!profile) return null;
+  const fields = [
+    { label: 'Purpose', value: profile.purpose },
+    { label: 'Audience', value: profile.audience },
+    { label: 'Writing Style', value: profile.writing_style },
+    { label: 'Voice', value: profile.voice },
+  ];
+  return (
+    <div className="mb-5 p-4 bg-purple-50 rounded-lg border border-purple-100">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-purple-500 mb-3">Document Profile</h4>
+      <div className="space-y-2">
+        {fields.map(({ label, value }) =>
+          value ? (
+            <div key={label}>
+              <span className="text-xs font-semibold text-gray-600">{label}: </span>
+              <span className="text-xs text-gray-700">{value}</span>
+            </div>
+          ) : null
+        )}
+      </div>
     </div>
   );
 }
@@ -67,6 +94,7 @@ function ContentTab({ spec }) {
   const sections = spec.sections || [];
   return (
     <div className="space-y-1">
+      <DocumentProfile profile={spec.document_profile} />
       {sections.length === 0 ? (
         <p className="text-sm text-gray-500">No sections extracted.</p>
       ) : (

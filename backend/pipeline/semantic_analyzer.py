@@ -12,7 +12,7 @@ from typing import Any
 
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
-MAX_TOKENS = 8000
+MAX_TOKENS = 12000
 MAX_TEXT_CHARS = 50000  # max condensed doc text sent to Claude (Sonnet 4.6 has 200K context)
 
 # Heading heuristic thresholds
@@ -23,12 +23,61 @@ _HEADING_MAX_TEXT_LEN = 120
 _STRUCTURE_TOOL = {
     "name": "document_structure",
     "description": (
-        "Extract and return the complete content structure of the document as a JSON object "
-        "with a 'sections' array. Each section describes a logical division of the document."
+        "Extract and return the complete DNA of the document: a document-level profile "
+        "(purpose, audience, writing style, voice) and a hierarchical sections array "
+        "(one entry per heading, with detailed intent, phrasing, formatting, and generation guidance). "
+        "Together these define everything needed to reproduce a similar document for a new engagement."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
+            "document_profile": {
+                "type": "object",
+                "description": "High-level characterisation of the document as a whole.",
+                "properties": {
+                    "purpose": {
+                        "type": "string",
+                        "description": (
+                            "What this document is designed to achieve and its role in the recruitment process. "
+                            "Name the document type, its function, and what the reader gains from it. "
+                            "E.g., 'Executive search role specification for a CTO position at a PE-backed SaaS "
+                            "company. Presented to senior technology candidates to convey company context, role "
+                            "mandate, and candidate requirements, enabling informed self-qualification before "
+                            "first-round interviews.'"
+                        )
+                    },
+                    "audience": {
+                        "type": "string",
+                        "description": (
+                            "The primary reader — who they are, what they already know, and what they need "
+                            "from this document to take the desired action. "
+                            "E.g., 'Senior technology executives (CTO/VP Engineering level) being considered "
+                            "for the role. Expects strategic framing, commercial context, clear reporting "
+                            "structure, and specificity about scope and equity opportunity.'"
+                        )
+                    },
+                    "writing_style": {
+                        "type": "string",
+                        "description": (
+                            "The overall stylistic register of the document. Describe formality level, "
+                            "sentence structure, use of concrete specifics vs abstract language, and tone. "
+                            "E.g., 'Formal consultant-authored narrative. Uses declarative sentences and "
+                            "grounds claims in specific facts (headcount, AUM, product names, revenue). "
+                            "Professional but not bureaucratic. Avoids superlatives and filler phrases.'"
+                        )
+                    },
+                    "voice": {
+                        "type": "string",
+                        "description": (
+                            "Grammatical voice and person, and how this varies across sections. "
+                            "E.g., 'Third-person throughout. Company and role sections use declarative "
+                            "third-person. Candidate profile uses gendered third-person pronoun (S/he). "
+                            "Passive constructions used for compensation and location. Authoritative throughout.'"
+                        )
+                    }
+                },
+                "required": ["purpose", "audience", "writing_style", "voice"]
+            },
             "sections": {
                 "type": "array",
                 "description": "Ordered list of top-level and nested document sections.",
@@ -41,7 +90,10 @@ _STRUCTURE_TOOL = {
                         },
                         "title": {
                             "type": "string",
-                            "description": "The heading text of the section."
+                            "description": (
+                                "The exact heading text of the section as it appears in the document. "
+                                "Do not paraphrase or normalise."
+                            )
                         },
                         "depth": {
                             "type": "integer",
@@ -52,34 +104,68 @@ _STRUCTURE_TOOL = {
                         "intent": {
                             "type": "string",
                             "description": (
-                                "The rhetorical purpose of this section, e.g. 'summary', "
-                                "'background', 'recommendation', 'profile', 'qualifications', "
-                                "'evidence', 'introduction', 'conclusion'."
+                                "2–4 sentences describing the section's specific purpose. "
+                                "Explain WHAT information it communicates, WHY it is included in this type "
+                                "of document, and HOW it serves the reader's decision-making or understanding. "
+                                "E.g., 'Establishes the client company's market position, ownership structure, "
+                                "and strategic growth trajectory following a recent acquisition. Helps candidates "
+                                "assess commercial and cultural fit before committing to the process. "
+                                "Sets the business context that motivates the hire and frames the role mandate.'"
                             )
                         },
-                        "allowed_element_types": {
-                            "type": "array",
-                            "description": "Types of content elements typically found in this section.",
-                            "items": {
-                                "type": "string",
-                                "enum": ["paragraph", "bullet_list", "numbered_list", "table", "image", "quote", "heading"]
-                            }
+                        "phrasing_style": {
+                            "type": "string",
+                            "description": (
+                                "A concise descriptor of how prose is written in this specific section. "
+                                "Include: voice (active/passive), person (first/second/third), "
+                                "register (formal/conversational/directive), and sentence structure. "
+                                "E.g., 'Formal third-person declarative. Dense factual sentences with "
+                                "named entities (companies, people, figures). No hedging language.' "
+                                "or 'Third-person with S/he pronoun. Aspirational and directive. "
+                                "Compound sentences with parallel structure.'"
+                            )
                         },
                         "rhetorical_pattern": {
                             "type": "string",
                             "description": (
-                                "The typical narrative or argumentative pattern used, "
-                                "e.g. 'context → finding → implication', "
-                                "'problem → solution → benefit', 'claim → evidence → conclusion'."
+                                "The narrative or argumentative flow within this section. "
+                                "E.g., 'context → ownership structure → market position → strategic outlook', "
+                                "'mandate → scope → key responsibilities → success criteria', "
+                                "'criteria → must-have table → nice-to-have table'."
+                            )
+                        },
+                        "content_guidelines": {
+                            "type": "string",
+                            "description": (
+                                "Precise formatting instructions for this section's content. "
+                                "Describe the exact use of any tables (column headers, typical row count, "
+                                "cell content length and type), bullet lists (nesting level, typical item "
+                                "count, item length), numbered lists, or prose paragraphs (count, length). "
+                                "E.g., 'Two-column table with headers Must Have and Nice to Have. Each row "
+                                "is a 1–2 sentence competency statement. Typically 5–8 rows per table. "
+                                "Rows are grouped into Critical Experiences and Personal Attributes categories.' "
+                                "or '3–4 prose paragraphs of 4–6 sentences each. No bullets. Each paragraph "
+                                "covers a distinct responsibility area.'"
                             )
                         },
                         "micro_template": {
                             "type": "string",
                             "description": (
-                                "A brief instruction for generating this section's content, "
-                                "e.g. 'Open with a one-sentence executive summary. Follow with "
-                                "3-5 bullet points highlighting key findings.'"
+                                "Step-by-step instructions a writer can follow to produce the content "
+                                "of this section for a new engagement, using only the available project artifacts. "
+                                "E.g., 'Open with a 2-sentence company description (sector + market position). "
+                                "Follow with 3–4 factual statements: ownership structure, employee headcount, "
+                                "flagship product, recent strategic event. Close with 1 sentence on growth "
+                                "direction or the commercial rationale for this hire.'"
                             )
+                        },
+                        "allowed_element_types": {
+                            "type": "array",
+                            "description": "Types of content elements present in this section.",
+                            "items": {
+                                "type": "string",
+                                "enum": ["paragraph", "bullet_list", "numbered_list", "table", "image", "quote", "heading"]
+                            }
                         },
                         "child_sections": {
                             "type": "array",
@@ -87,38 +173,56 @@ _STRUCTURE_TOOL = {
                             "items": {}
                         }
                     },
-                    "required": ["section_id", "title", "depth", "intent",
-                                 "allowed_element_types", "rhetorical_pattern", "micro_template"]
+                    "required": ["section_id", "title", "depth", "intent", "phrasing_style",
+                                 "allowed_element_types", "rhetorical_pattern", "content_guidelines",
+                                 "micro_template"]
                 }
             }
         },
-        "required": ["sections"]
+        "required": ["document_profile", "sections"]
     }
 }
 
-_SYSTEM_PROMPT = """You are a document structure analyst specialising in professional recruitment and business documents.
+_SYSTEM_PROMPT = """You are a document structure analyst specialising in professional recruitment and business documents. Your output is used to reproduce similar documents for new engagements — so precision and completeness are essential.
 
-Your task is to analyse the structured text of a document and call the 'document_structure' tool to return a precise, hierarchical representation of its content architecture.
+Your task is to analyse the structured text of a document and call the 'document_structure' tool to return the document's complete DNA: a document-level profile and a full hierarchical section map.
 
 The document text shows each block prefixed with its font size: '[12.5pt] text content'. Page boundaries are marked '--- PAGE N ---'.
 
-How to identify headings:
-- First, identify the body text size — the most common font size in the document, typically 9–12pt.
-- Any block whose font size is notably larger than the body text (roughly 1.4× or more) is a section heading.
-- Larger sizes = higher-level headings (depth 1); smaller oversized sizes = sub-headings (depth 2 or 3).
-- Short bold lines at body size may also be sub-headings — use content context to decide.
-- Pages with no oversized font blocks contain only body text belonging to the previous heading's section.
+━━━ STEP 1: IDENTIFY ALL HEADINGS ━━━
 
-Rules (follow these strictly):
-1. Create exactly one section entry for EVERY identified heading. Never merge or skip headings.
-2. Use the EXACT heading text as the section 'title' — do not paraphrase or rename it.
-3. Determine 'depth' from relative font size: largest headings = depth 1, next tier = depth 2, smaller = depth 3.
-4. A heading that follows a larger heading on the same or adjacent page is a child_section of that larger heading.
-5. A document with 8–10 pages should yield at least 8–12 sections — if you count fewer than 5, re-examine the font sizes carefully.
-6. 'intent' must be a specific lowercase phrase — e.g. 'company overview', 'role mandate', 'reporting structure', 'candidate requirements', 'competency profile', 'compensation', 'firm overview'. Never use just 'content'.
-7. 'rhetorical_pattern' describes how content flows within the section (e.g. 'context → key facts → relevance', 'criteria → must-have → nice-to-have').
-8. 'micro_template' is a practical instruction a writer can follow to produce similar content for a new engagement.
-9. Always call the tool — never return plain text."""
+To find headings:
+- Identify the body text size — the most common font size in the document, typically 9–12pt.
+- Any block at roughly 1.4× or more above the body size is a section heading.
+- Larger font sizes = higher-level headings (depth 1); smaller oversized fonts = sub-headings (depth 2–3).
+- Short lines that appear to introduce a new topic — even at body size — may be sub-headings if they are followed by indented or structured content.
+- A document with 8–10 pages should yield at least 8–12 distinct headings. If you find fewer than 5, re-examine the font sizes carefully.
+
+━━━ STEP 2: COMPLETE THE DOCUMENT PROFILE ━━━
+
+Fill in 'document_profile' with a characterisation of the document as a whole. Be specific and substantive — avoid generic descriptions.
+
+- purpose: What the document achieves and its precise role in the recruitment process.
+- audience: The primary reader, what they already know, and what they need from this document.
+- writing_style: Formality level, sentence structure, use of concrete specifics vs abstract language, overall tone.
+- voice: Grammatical voice and person across sections; note any variation between sections.
+
+━━━ STEP 3: EXTRACT AND DESCRIBE EVERY SECTION ━━━
+
+Create exactly one section entry for EVERY heading identified in Step 1. Never merge, skip, or consolidate headings.
+
+For each section:
+- title: Use the EXACT heading text from the document. Do not paraphrase.
+- depth: 1 for top-level headings (largest font), 2 for sub-headings, 3 for sub-sub-headings.
+- child_sections: Nest smaller headings under the larger heading that precedes them on the same page.
+- intent: 2–4 sentences — WHAT this section communicates, WHY it appears in this document type, and HOW it serves the reader. Be specific about the content, not just the category.
+- phrasing_style: How prose is written in this section — voice (active/passive), person (first/second/third), register (formal/directive/conversational), and sentence structure. A concise descriptor a writer can follow.
+- rhetorical_pattern: The logical flow of content within the section (e.g. 'context → ownership → market position → strategic outlook', 'mandate → scope → responsibilities → success criteria', 'criteria → must-have table → nice-to-have table').
+- content_guidelines: Precise formatting instructions. Describe any tables (exact column headers, typical row count, cell content type and length), bullet lists (nesting level, item count, item length), or prose structure (paragraph count, sentence length). Specific enough to replicate for a new engagement.
+- micro_template: Step-by-step instructions to write this section from scratch using project artifacts. Concrete and actionable.
+- allowed_element_types: List all element types present.
+
+Always call the tool — never return plain text."""
 
 
 def _is_heading(block: dict) -> bool:
