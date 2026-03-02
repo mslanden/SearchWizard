@@ -14,11 +14,9 @@ Note: Page-to-PNG rendering uses PyMuPDF directly (no poppler/pdf2image dependen
 
 import base64
 import json
-import logging
 from collections import Counter, defaultdict
 from typing import Optional
 
-logger = logging.getLogger(__name__)
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 3000
@@ -222,7 +220,7 @@ async def _run_claude_vision(file_bytes: bytes, source_format: str, candidate_to
         return json.loads(text)
 
     except Exception as e:
-        logger.warning(f"Claude Vision call failed: {e}. Falling back to algorithmic tokens.")
+        print(f"Claude Vision call failed: {e}. Falling back to algorithmic tokens.")
         return {}
 
 
@@ -303,7 +301,7 @@ async def analyze_visual_style(file_bytes: bytes, source_format: str, idm: dict,
         # Step 2: Claude Vision for PDF and image formats (fills gaps, confirms values)
         vision_tokens = {}
         if source_format in ("pdf", "image", "jpg", "jpeg", "png"):
-            logger.info("Visual style analyzer: running Claude Vision pass")
+            print("Visual style analyzer: running Claude Vision pass")
             vision_tokens = await _run_claude_vision(file_bytes, source_format, algorithmic_tokens, client)
 
         # Step 3: merge
@@ -323,5 +321,5 @@ async def analyze_visual_style(file_bytes: bytes, source_format: str, idm: dict,
         return final_tokens
 
     except Exception as e:
-        logger.error(f"Visual style analysis failed: {e}")
+        print(f"Visual style analysis failed: {e}")
         raise

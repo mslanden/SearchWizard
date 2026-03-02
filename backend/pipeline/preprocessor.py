@@ -7,10 +7,8 @@ that preserves text, bounding boxes, and style metadata for downstream pipeline 
 
 import io
 import uuid
-import logging
 from typing import Optional
 
-logger = logging.getLogger(__name__)
 
 # Page size detection thresholds (points, ±5pt tolerance)
 _A4_W, _A4_H = 595.3, 841.9
@@ -322,28 +320,28 @@ def build_idm(file_bytes: bytes, filename: str) -> dict:
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
     if ext == "pdf":
-        logger.info(f"Preprocessing PDF: {filename}")
+        print(f"Preprocessing PDF: {filename}")
         try:
             return _build_idm_from_pdf(file_bytes)
         except Exception as e:
-            logger.error(f"PDF preprocessing failed: {e}")
+            print(f"PDF preprocessing failed: {e}")
             raise
 
     elif ext in ("doc", "docx"):
-        logger.info(f"Preprocessing DOCX: {filename}")
+        print(f"Preprocessing DOCX: {filename}")
         try:
             return _build_idm_from_docx(file_bytes)
         except Exception as e:
-            logger.error(f"DOCX preprocessing failed: {e}")
+            print(f"DOCX preprocessing failed: {e}")
             raise
 
     elif ext in ("jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp"):
-        logger.info(f"Preprocessing image: {filename}")
+        print(f"Preprocessing image: {filename}")
         return _build_idm_from_image(file_bytes, filename)
 
     else:
         # Attempt PDF as a last resort (e.g. unlabelled PDF bytes)
-        logger.warning(f"Unknown extension '{ext}' for {filename}, attempting PDF parse")
+        print(f"Unknown extension '{ext}' for {filename}, attempting PDF parse")
         try:
             return _build_idm_from_pdf(file_bytes)
         except Exception:

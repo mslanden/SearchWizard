@@ -9,11 +9,9 @@ For DOCX (no bboxes): falls back to a Claude call that infers layout from sectio
 """
 
 import json
-import logging
 from collections import Counter, defaultdict
 from typing import Optional
 
-logger = logging.getLogger(__name__)
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 2000
@@ -248,7 +246,7 @@ async def _claude_layout_fallback(idm: dict, client) -> dict:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        logger.warning("Layout fallback: could not parse Claude JSON response")
+        print("Layout fallback: could not parse Claude JSON response")
         return {}
 
 
@@ -293,7 +291,7 @@ async def analyze_layout(idm: dict, client) -> dict:
 
         else:
             # DOCX or image — use Claude fallback
-            logger.info("Layout analyzer: no bboxes available, using Claude fallback")
+            print("Layout analyzer: no bboxes available, using Claude fallback")
             fallback = await _claude_layout_fallback(idm, client)
 
             return {
@@ -313,5 +311,5 @@ async def analyze_layout(idm: dict, client) -> dict:
             }
 
     except Exception as e:
-        logger.error(f"Layout analysis failed: {e}")
+        print(f"Layout analysis failed: {e}")
         raise

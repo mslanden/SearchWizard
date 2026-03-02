@@ -12,10 +12,8 @@ Responsibilities beyond simple merging:
 """
 
 import uuid
-import logging
 import datetime
 
-logger = logging.getLogger(__name__)
 
 _DEPTH_TO_ROLE = {1: "h1", 2: "h2", 3: "h3", 4: "body"}
 
@@ -128,7 +126,7 @@ def _validate_visual_spec(visual_spec: dict) -> dict:
 def _validate_content_spec(content_spec: dict) -> dict:
     """Ensure sections list is non-empty."""
     if not content_spec.get("sections"):
-        logger.warning("Blueprint assembler: content_spec has no sections — adding placeholder")
+        print("Blueprint assembler: content_spec has no sections — adding placeholder")
         content_spec["sections"] = [{
             "section_id": "s1",
             "title": "Document",
@@ -186,7 +184,7 @@ def assemble_blueprint(
         "visual_style_spec": visual_spec,
     }
 
-    logger.info(
+    print(
         f"Blueprint assembled: {len(content_spec.get('sections', []))} sections, "
         f"column={layout_spec.get('column_structure')}, "
         f"typography roles={list(visual_spec.get('typography', {}).keys())}"

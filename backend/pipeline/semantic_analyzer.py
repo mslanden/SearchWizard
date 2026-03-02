@@ -8,10 +8,8 @@ Uses Claude with tool-use (function calling) to enforce structured JSON output.
 """
 
 import json
-import logging
 from typing import Any
 
-logger = logging.getLogger(__name__)
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 4000
@@ -171,7 +169,7 @@ async def analyze_semantic(idm: dict, client) -> dict:
         condensed_text = _condense_idm_to_text(idm)
 
         if not condensed_text.strip():
-            logger.warning("Semantic analyzer: IDM has no text content, returning minimal structure")
+            print("Semantic analyzer: IDM has no text content, returning minimal structure")
             return {
                 "sections": [{
                     "section_id": "s1",
@@ -215,9 +213,9 @@ async def analyze_semantic(idm: dict, client) -> dict:
                 except json.JSONDecodeError:
                     pass
 
-        logger.error("Semantic analyzer: could not extract structured output from Claude response")
+        print("Semantic analyzer: could not extract structured output from Claude response")
         raise ValueError("Claude did not return a valid document_structure tool call")
 
     except Exception as e:
-        logger.error(f"Semantic analysis failed: {e}")
+        print(f"Semantic analysis failed: {e}")
         raise
