@@ -12,10 +12,14 @@ Pattern follows semantic_analyzer.py exactly: AsyncAnthropic, tool use, same res
 parsing loop.
 """
 
+import httpx
+
 from anthropic import AsyncAnthropic
 from brain.embedder import embed_and_store
+from utils import extract_text_from_pdf, extract_text_from_docx
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
+_FILE_DOWNLOAD_TIMEOUT = 30  # seconds
 ARTIFACT_PROCESS_MAX_TOKENS = 1024   # summary + 15 tags fits comfortably
 MAX_CONTENT_CHARS = 8000             # slightly larger than the 6000-char embed window
 
@@ -84,6 +88,41 @@ include that as a tag (e.g. hiring-manager-profile, key-stakeholder)
 - Include geographic market if evident (uk-market, us-market, apac)
 - Include seniority signals if evident (c-suite, vp-level, board-level, mid-market, entry-level)
 - Use hyphens for multi-word tags. No duplicates."""
+
+
+async def _extract_file_content(file_url: str, file_type: str) -> str | None:
+    """
+    Download a file from Supabase Storage and extract its text content.
+    Returns extracted text on success, None on failure or unsupported format.
+
+    file_type is the browser MIME type stored at upload time, e.g. 'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=_FILE_DOWNLOAD_TIMEOUT) as client:
+            resp = await client.get(file_url)
+            resp.raise_for_status()
+            file_bytes = resp.content
+    except Exception as e:
+        print(f"[artifact_processor] File download failed: {e}")
+        return None
+
+    ft = (file_type or '').lower()
+    try:
+        if 'pdf' in ft:
+            return extract_text_from_pdf(file_bytes)
+        elif 'wordprocessingml' in ft or 'openxmlformats' in ft:
+            return extract_text_from_docx(file_bytes)
+        elif 'msword' in ft:
+            return extract_text_from_docx(file_bytes)
+        elif 'text/plain' in ft:
+            return file_bytes.decode('utf-8', errors='replace')
+        else:
+            print(f"[artifact_processor] Unsupported file_type for extraction: {file_type}")
+            return None
+    except Exception as e:
+        print(f"[artifact_processor] Text extraction failed (type={file_type}): {e}")
+        return None
 
 
 async def _call_claude_enrich(
@@ -180,10 +219,30 @@ async def process_artifact(
         print(f"[artifact_processor] {table}/{artifact_id} not found")
         return {'success': False, 'summary_generated': False, 'artifact_id': artifact_id, 'table': table}
 
-    # If there is no text content (e.g. image-only upload), skip Claude and just embed
     processed_content = artifact.get('processed_content') or ''
+
+    # For file uploads, processed_content is not set by the frontend — extract it here.
+    # file_path is only present on Supabase Storage uploads (not URL or text artifacts).
+    if not processed_content.strip() and artifact.get('file_path'):
+        file_url = artifact.get('file_url', '')
+        file_type = artifact.get('file_type', '')
+        print(f"[artifact_processor] {artifact_id} has no processed_content — extracting from file (type={file_type})")
+        extracted = await _extract_file_content(file_url, file_type)
+        # Reject extraction errors returned as bracketed strings by the utils functions
+        if extracted and extracted.strip() and not extracted.startswith('['):
+            processed_content = extracted
+            artifact = {**artifact, 'processed_content': processed_content}
+            try:
+                supabase.table(table).update({'processed_content': processed_content}).eq('id', artifact_id).execute()
+                print(f"[artifact_processor] {artifact_id} — extracted {len(processed_content)} chars from file")
+            except Exception as e:
+                print(f"[artifact_processor] Failed to persist extracted content for {artifact_id}: {e}")
+        else:
+            print(f"[artifact_processor] {artifact_id} — file extraction yielded no usable content")
+
+    # If still no content (image-only, unsupported format, download failed), embed from name+type only
     if not processed_content.strip():
-        print(f"[artifact_processor] {artifact_id} has no processed_content — embedding from name+type only")
+        print(f"[artifact_processor] {artifact_id} has no extractable content — embedding from name+type only")
         await embed_and_store(supabase, artifact_id, table, artifact)
         return {'success': True, 'summary_generated': False, 'artifact_id': artifact_id, 'table': table}
 
