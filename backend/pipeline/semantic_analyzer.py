@@ -131,7 +131,7 @@ _STRUCTURE_TOOL = {
                                 "The narrative or argumentative flow within this section. "
                                 "E.g., 'context → ownership structure → market position → strategic outlook', "
                                 "'mandate → scope → key responsibilities → success criteria', "
-                                "'criteria → must-have table → nice-to-have table'."
+                                "'overview → required attributes → preferred attributes'."
                             )
                         },
                         "content_guidelines": {
@@ -141,9 +141,8 @@ _STRUCTURE_TOOL = {
                                 "Describe the exact use of any tables (column headers, typical row count, "
                                 "cell content length and type), bullet lists (nesting level, typical item "
                                 "count, item length), numbered lists, or prose paragraphs (count, length). "
-                                "E.g., 'Two-column table with headers Must Have and Nice to Have. Each row "
-                                "is a 1–2 sentence competency statement. Typically 5–8 rows per table. "
-                                "Rows are grouped into Critical Experiences and Personal Attributes categories.' "
+                                "E.g., 'Two-column table with 6–8 rows; left column states the requirement "
+                                "(1 sentence), right column states expected evidence or priority (1 sentence).' "
                                 "or '3–4 prose paragraphs of 4–6 sentences each. No bullets. Each paragraph "
                                 "covers a distinct responsibility area.'"
                             )
@@ -191,12 +190,26 @@ The document text shows each block prefixed with its font size: '[12.5pt] text c
 
 ━━━ STEP 1: IDENTIFY ALL HEADINGS ━━━
 
-To find headings:
-- Identify the body text size — the most common font size in the document, typically 9–12pt.
-- Any block at roughly 1.4× or more above the body size is a section heading.
-- Larger font sizes = higher-level headings (depth 1); smaller oversized fonts = sub-headings (depth 2–3).
-- Short lines that appear to introduce a new topic — even at body size — may be sub-headings if they are followed by indented or structured content.
-- A document with 8–10 pages should yield at least 8–12 distinct headings. If you find fewer than 5, re-examine the font sizes carefully.
+Use ALL FOUR signals below — not font size alone. In design-heavy PDFs, font size is often unreliable; the textual signals are equally important.
+
+SIGNAL A — FONT SIZE
+Identify the body text size (the most common font size, typically 9–12pt). Any block at 1.4× or more above the body size is a heading. Larger = higher-level (depth 1); smaller oversized = sub-headings (depth 2–3).
+
+SIGNAL B — EMBEDDED HEADING PATTERN
+In design-heavy PDFs, a heading and its body text are often merged into a single extracted block. Look for a SHORT PHRASE (2–6 words) at the very start of a block, immediately followed by a longer explanatory sentence or paragraph that elaborates on it. The short phrase is the section heading. Example: a block that begins "Role Location" and continues with a longer sentence about office locations — "Role Location" is a section heading.
+
+SIGNAL C — STANDALONE SHORT BLOCKS
+A text block shorter than ~40 characters appearing immediately before a longer block is almost certainly a heading, even at body size.
+
+SIGNAL D — SEMANTIC RECOGNITION (most reliable for design PDFs)
+You are reading a professional recruitment or business document and you understand what these documents contain. Use your understanding of the document's meaning to identify where one major topic ends and another begins — even when typography provides no signal. Sections in these documents typically cover topics such as: the company background, the role mandate, key responsibilities, candidate requirements, compensation, location, and process. When you read a paragraph whose content clearly introduces a new top-level subject, that signals a new section regardless of font size. Trust your language understanding.
+
+CRITICAL — what is NOT a heading:
+- Category labels or row-group labels within a table (bold text grouping rows inside a two-column table)
+- Bullet list subheadings or bold inline phrases within a paragraph
+- Only text that introduces an entirely new major topic, standing independently before its content, qualifies as a section
+
+A 6–10 page document should yield at least 5–10 distinct sections. If you find fewer than 4, re-examine using Signals B, C, and D.
 
 ━━━ STEP 2: COMPLETE THE DOCUMENT PROFILE ━━━
 
@@ -217,7 +230,7 @@ For each section:
 - child_sections: Nest smaller headings under the larger heading that precedes them on the same page.
 - intent: 2–4 sentences — WHAT this section communicates, WHY it appears in this document type, and HOW it serves the reader. Be specific about the content, not just the category.
 - phrasing_style: How prose is written in this section — voice (active/passive), person (first/second/third), register (formal/directive/conversational), and sentence structure. A concise descriptor a writer can follow.
-- rhetorical_pattern: The logical flow of content within the section (e.g. 'context → ownership → market position → strategic outlook', 'mandate → scope → responsibilities → success criteria', 'criteria → must-have table → nice-to-have table').
+- rhetorical_pattern: The logical flow of content within the section (e.g. 'context → ownership → market position → strategic outlook', 'mandate → scope → responsibilities → success criteria', 'overview → required attributes → preferred attributes').
 - content_guidelines: Precise formatting instructions. Describe any tables (exact column headers, typical row count, cell content type and length), bullet lists (nesting level, item count, item length), or prose structure (paragraph count, sentence length). Specific enough to replicate for a new engagement.
 - micro_template: Step-by-step instructions to write this section from scratch using project artifacts. Concrete and actionable.
 - allowed_element_types: List all element types present.
