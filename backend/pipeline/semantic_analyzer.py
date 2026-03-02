@@ -13,7 +13,7 @@ from typing import Any
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 8000
-MAX_TEXT_CHARS = 12000  # max condensed doc text sent to Claude
+MAX_TEXT_CHARS = 50000  # max condensed doc text sent to Claude (Sonnet 4.6 has 200K context)
 
 # Heading heuristic thresholds
 _HEADING_MIN_SIZE_PT = 13.0
