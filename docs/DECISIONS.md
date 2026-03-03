@@ -429,3 +429,106 @@ engagement in ways the raw content alone cannot (e.g. "This is the hiring manage
 `summary TEXT` and `tags TEXT[]` columns already exist on `artifacts`, `candidate_artifacts`,
 and `process_artifacts` (added in Migration 8 as stubs). The Supabase Python client
 serialises `list[str]` → `TEXT[]` natively.
+
+---
+
+## ADR-014 — Blueprint Pipeline: Vision OCR Enricher, Stage B Vision Pass, Prompt Bias Fixes (Mar 2026)
+
+**Status:** Active (merged to production)
+
+**Context:**
+During testing of the V3 Blueprint Pipeline on an EgonZehnder role specification PDF,
+Stage B (Semantic Analyzer) consistently returned only 2 sections — "Critical Experiences
+and Capabilities" and "Personal Attributes" — instead of the 6+ major sections visible
+in the document. Railway logs showed: `condensed text 1484 chars, 26 blocks, unique font
+sizes: [10.0, 10.4, 12.0]` for a 9-page document (expected ~18,000+ chars). Root cause:
+the PDF was an InDesign/design-tool export where all major headings are stored as
+vector/outlined text, invisible to PyMuPDF `get_text("dict")` and any other text
+extraction library. No extraction library can recover outlined text; only Vision can read it.
+
+A second root cause was also identified: example field values in the `_STRUCTURE_TOOL`
+JSON schema were unintentionally acting as prompt injection — the `content_guidelines`
+description literally named "Critical Experiences and Personal Attributes categories"
+(the exact two sections Claude was returning), and `rhetorical_pattern` described the
+candidate profile section's table structure precisely.
+
+**Four fixes shipped:**
+
+### Fix 1 — Prompt schema bias removed from `_STRUCTURE_TOOL`
+The `content_guidelines` description example and `rhetorical_pattern` example in the
+`document_structure` tool schema were replaced with fully generic descriptions that do
+not name any specific document type's section names. This removed the unintentional
+prompt injection that caused Claude to always return the same two sections regardless
+of the actual document content.
+
+### Fix 2 — Heading detection signals rewritten (`_SYSTEM_PROMPT` Step 1)
+The heading detection instructions were rewritten with four explicit, prioritised signals:
+- **SIGNAL A — Font size:** font 1.4× or more above the most common body size
+- **SIGNAL B — Embedded heading pattern:** short phrase (2–6 words) at the start of a
+  block before longer elaboration. No period requirement (design PDFs rarely terminate
+  standalone headings with a period; the pattern "Role Location. The company…" has a
+  period only because the heading is embedded within a run-on sentence — the period
+  is not the signal, the short phrase + elaboration pattern is)
+- **SIGNAL C — Standalone short blocks:** block of <40 chars preceding a longer block
+- **SIGNAL D — Semantic recognition (most important for design PDFs):** Claude uses
+  language understanding to identify section topic changes from the content itself,
+  without any typographic signal at all. Explicitly marked as the primary strategy when
+  typography signals are absent (sparse PDFs, design-heavy exports)
+
+### Fix 3 — Claude Vision pass added to Stage B (`semantic_analyzer.py`)
+For PDF uploads, `analyze_semantic()` now accepts `file_bytes` and `source_format`
+parameters. When `source_format == "pdf"` and `file_bytes` is provided, it renders
+up to 8 pages at 72 DPI (1.0× scale) to PNG and builds a multimodal Claude message:
+page images first (so Claude sees the visual document structure), followed by the
+extracted text as a supplementary reference. This allows Claude to identify section
+boundaries from the visual layout even when headings are not extractable as text.
+
+### Fix 4 — Stage A.5 Vision OCR Enricher (`ocr_enricher.py`)
+A new pipeline stage inserted between Stage A (Preprocessor) and Stages B/C/D runs
+for PDF files only. It checks whether the IDM contains on average fewer than 500
+chars per page. When sparse:
+- Renders all pages to PNG at 108 DPI (1.5× scale — higher quality than Stage B's
+  72 DPI pass, appropriate for text extraction accuracy)
+- Makes a single Claude Vision call using tool use (`ocr_extract` tool) with all page
+  images; Anthropic handles string escaping so special characters in OCR'd text
+  (backslashes, quotes, raw newlines) can never produce a JSON parse error
+- Appends OCR blocks to the existing IDM pages (does not replace PyMuPDF blocks,
+  which may carry useful style metadata)
+- Sets `idm["metadata"]["ocr_enriched"] = True`
+- Falls back gracefully to the original IDM on any exception
+
+**Post-deploy fix (commit `cfdfe67`):** The initial implementation requested a raw JSON
+response from Claude. During live testing the OCR'd text contained characters that Claude
+did not escape correctly inside JSON string values, causing `json.loads()` to fail at
+character 4336 with "Expecting ',' delimiter". The graceful fallback caught it but
+Stage A.5 produced no enrichment for that run. Fixed by switching to tool use, consistent
+with every other stage in the pipeline. `_OCR_MAX_TOKENS` also raised from 6000 → 8000
+(near model max) to reduce truncation risk on longer documents.
+
+This means all downstream stages (B, C, D) receive complete document text regardless
+of whether headings are outlined/vector in the source PDF.
+
+**Key choices and reasoning:**
+
+| Choice | Alternative considered | Reason chosen |
+|--------|----------------------|---------------|
+| Claude Vision OCR (Stage A.5) | Tesseract OCR | Tesseract requires `tesseract-ocr` system package on Railway — adds a `nixpacks.toml` dependency and build complexity. Claude Vision requires no new infrastructure and handles design fonts, complex layouts, and multi-column text more accurately than open-source OCR. |
+| Threshold 500 chars/page | Lower threshold | Conservative threshold — EgonZehnder document yielded 165 chars/page (well below threshold); typical text-native PDFs yield 1,500–3,000 chars/page (well above). No risk of false positives on normal PDFs; zero overhead when not triggered. |
+| Append OCR blocks (not replace) | Replace all IDM blocks | PyMuPDF blocks may carry font size, weight, color metadata useful to Stages C and D. Appending preserves this metadata while adding the recovered text. |
+| Single Claude Vision call for all pages | One call per page | Reduces API round-trips and latency. Claude's context window can handle all pages of a typical golden example (≤20 pages) in one call. |
+| Stage A.5 enriches IDM before B/C/D | Enrich only in Stage B | All three stages (B, C, D) benefit from complete text. Layout and visual style analyzers also need text density for accurate header/footer detection. Single enrichment point is cleaner than duplicating Vision calls per stage. |
+| `ocr_enricher.py` filename (not `pdf_ocr_enricher.py`) | `pdf_ocr_enricher.py` | `backend/.gitignore` contains a `pdf_*.py` pattern (intended to exclude ad-hoc test scripts). The `pdf_` prefix caused the file to be gitignored. Renamed to `ocr_enricher.py`. |
+| Tool use for OCR result extraction | Raw JSON response | Live testing revealed that Claude did not escape special characters (backslashes, quotes, raw newlines) inside JSON string values when returning raw text, causing `json.loads()` failures. Tool use delegates serialisation to the Anthropic SDK, which always produces well-formed output regardless of document content. Consistent with every other pipeline stage. |
+
+**Files introduced:**
+- `backend/pipeline/ocr_enricher.py` (new module)
+
+**Files modified:**
+- `backend/pipeline/semantic_analyzer.py` — Vision pass, prompt bias fixes, heading signal rewrite
+- `backend/pipeline/pipeline_runner.py` — Stage A.5 invocation; `_safe_semantic()` updated to pass `file_bytes` + `source_format`
+
+**Commits:**
+- `b89e064` — prompt/schema bias fixes + heading detection rewrite
+- `83fd138` — Claude Vision pass added to Stage B
+- `06df8d9` — Stage A.5 OCR Enricher (`ocr_enricher.py`) + pipeline runner integration
+- `cfdfe67` — Fix Stage A.5: switch to tool use; raise `_OCR_MAX_TOKENS` 6000 → 8000
