@@ -10,7 +10,6 @@ so text-native PDFs pass through untouched.
 """
 
 import base64
-import json
 
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
@@ -23,23 +22,51 @@ _OCR_CHARS_PER_PAGE_THRESHOLD = 500
 # Higher resolution for OCR — we want Claude to read body text accurately
 _OCR_RENDER_SCALE = 1.5  # 108 DPI
 
-_OCR_MAX_TOKENS = 6000   # sufficient for ~3000 words across 9 pages + JSON overhead
+# Tool use guarantees properly-escaped string output — no JSON parse fragility.
+# 8000 tokens (near model max) handles up to ~20 pages of dense OCR text.
+_OCR_MAX_TOKENS = 8000
+
+_OCR_TOOL = {
+    "name": "ocr_extract",
+    "description": "Return the extracted text for each page of the document.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "pages": {
+                "type": "array",
+                "description": "One entry per page, in page order.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "page": {
+                            "type": "integer",
+                            "description": "1-based page number."
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "All visible text from this page in reading order."
+                        }
+                    },
+                    "required": ["page", "text"]
+                }
+            }
+        },
+        "required": ["pages"]
+    }
+}
 
 _OCR_SYSTEM_PROMPT = (
-    "You are a precise document text extractor. Your only task is to extract all "
-    "visible text from PDF page images in reading order and return it as a JSON object. "
-    "Return ONLY the JSON — no markdown fences, no explanation."
+    "You are a precise document text extractor. Extract all visible text from PDF page "
+    "images in reading order and call the 'ocr_extract' tool with the results. "
+    "Never return plain text — always call the tool."
 )
 
 _OCR_USER_TEMPLATE = (
-    "Extract all visible text from each of the {n_pages} PDF page images provided below.\n\n"
+    "Extract all visible text from each of the {n_pages} PDF page images provided below "
+    "and call the 'ocr_extract' tool.\n\n"
     "Include ALL text: headings, subheadings, body paragraphs, table content (cell by cell), "
     "bullet lists, captions, footnotes, header and footer text, and any other visible text. "
-    "Preserve reading order: top to bottom, left to right within each page.\n\n"
-    "Return a JSON object with this exact structure:\n"
-    '{{"pages": [{{"page": 1, "text": "all text from page 1 in reading order"}}, '
-    '{{"page": 2, "text": "all text from page 2 in reading order"}}, ...]}}\n\n'
-    "Return ONLY the JSON object."
+    "Preserve reading order: top to bottom, left to right within each page."
 )
 
 
@@ -120,20 +147,20 @@ async def enrich_idm_with_vision_ocr(idm: dict, file_bytes: bytes, client) -> di
             model=CLAUDE_MODEL,
             max_tokens=_OCR_MAX_TOKENS,
             system=_OCR_SYSTEM_PROMPT,
+            tools=[_OCR_TOOL],
+            tool_choice={"type": "tool", "name": "ocr_extract"},
             messages=[{"role": "user", "content": content}],
         )
 
-        # Parse JSON response — strip markdown fences if present
-        raw = response.content[0].text if response.content else "{}"
-        raw = raw.strip()
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        raw = raw.strip()
-
-        ocr_result = json.loads(raw)
-        ocr_pages = {entry["page"]: entry["text"] for entry in ocr_result.get("pages", [])}
+        # Extract tool use result — Anthropic handles string escaping, no parse fragility
+        ocr_pages = {}
+        for block in response.content:
+            if block.type == "tool_use" and block.name == "ocr_extract":
+                ocr_pages = {
+                    entry["page"]: entry["text"]
+                    for entry in block.input.get("pages", [])
+                }
+                break
 
         # Append one OCR block per page with the complete extracted text.
         # We append rather than replace so existing PyMuPDF style metadata is preserved
