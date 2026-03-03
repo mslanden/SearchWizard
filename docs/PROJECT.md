@@ -47,8 +47,9 @@ FastAPI Backend (Railway)
     │  File parsing pipeline
     │
     ├── pipeline/             (blueprint pipeline — see Data Flow: Blueprint Pipeline)
-    │   ├── preprocessor.py   →  Stage A: file bytes → Intermediate Document Model (IDM)
-    │   ├── semantic_analyzer.py  →  Stage B: IDM → ContentStructureSpec (Claude tool use)
+    │   ├── preprocessor.py       →  Stage A: file bytes → Intermediate Document Model (IDM)
+    │   ├── ocr_enricher.py       →  Stage A.5: Vision OCR enrichment for sparse PDFs (<500 chars/page)
+    │   ├── semantic_analyzer.py  →  Stage B: IDM → ContentStructureSpec (Claude tool use + Vision)
     │   ├── layout_analyzer.py    →  Stage C: IDM → LayoutSpec (algorithmic + Claude fallback)
     │   ├── visual_style_analyzer.py  →  Stage D: IDM → VisualStyleSpec (PyMuPDF + Claude Vision)
     │   ├── blueprint_assembler.py    →  Stage E: merge B+C+D → JSONBlueprint
@@ -145,11 +146,19 @@ a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB 
    `status='processing'`, dispatches `run_pipeline_and_store` as a FastAPI `BackgroundTask`
 4. Backend returns **HTTP 202** immediately: `{"template_id": "...", "status": "processing"}`
 5. Frontend starts polling `GET /api/templates/{id}/status` every **4 seconds**
-6. In the background the five pipeline stages run:
+6. In the background the pipeline stages run:
    - **Stage A** (sync): `preprocessor.py` → `build_idm()` converts file bytes to the
      Intermediate Document Model (IDM) — page blocks, span-level style metadata, bboxes
+   - **Stage A.5** (async, PDF only): `ocr_enricher.py` — checks average chars/page; if
+     below 500 chars/page (sparse PDF, e.g. design-heavy InDesign/Illustrator export where
+     headings are vector/outlined text invisible to any text extractor), renders all pages
+     to PNG at 108 DPI and calls Claude Vision to extract all visible text; OCR blocks are
+     appended to the IDM so all downstream stages see the complete document content
    - **Stages B, C, D** (concurrent via `asyncio.gather`):
-     - B `semantic_analyzer.py` → `ContentStructureSpec` (sections, intents, rhetorical patterns) via Claude tool use
+     - B `semantic_analyzer.py` → `ContentStructureSpec` (sections, intents, rhetorical patterns)
+       via Claude tool use; for PDF uploads also passes rendered page images (up to 8 pages,
+       72 DPI) alongside extracted text so Claude identifies document structure from both
+       visual layout and semantic content — the primary strategy for design-heavy PDFs
      - C `layout_analyzer.py` → `LayoutSpec` (margins, columns, spacing — algorithmic for PDFs, Claude fallback for DOCX)
      - D `visual_style_analyzer.py` → `VisualStyleSpec` (typography tokens, colour palette — IDM metadata + Claude Vision on rendered PNG pages)
    - **Stage E** (sync): `blueprint_assembler.py` merges B+C+D → `JSONBlueprint`
@@ -232,6 +241,10 @@ a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB 
 2. ✅ Artifact type system — DB-driven dropdowns for all artifact categories (Feb 2026)
 3. ✅ Code review cleanup — dead code deleted, constants extracted, components consolidated (Feb 2026, commit `86f4227`)
 4. ✅ Document DNA Blueprint Pipeline (V3) — async multi-stage golden example analysis (Feb 2026)
+   - ✅ Stage A.5 Vision OCR enricher — recovers text from design-heavy PDFs (<500 chars/page avg) so all stages see complete content (Mar 2026)
+   - ✅ Stage B Vision pass — multimodal section detection for PDFs where headings are vector/outlined text invisible to PyMuPDF (Mar 2026)
+   - ✅ Heading detection prompt rewritten — four explicit signals (font size, embedded heading pattern, standalone short blocks, semantic recognition) (Mar 2026)
+   - ✅ Prompt schema bias removed from `_STRUCTURE_TOOL` — example field values no longer name specific section types (Mar 2026)
 5. ✅ Project Brain — semantic artifact retrieval for V3 document generation (Feb 2026)
    - ✅ Migration 8 applied (pgvector + embedding columns on all artifact tables)
    - ✅ Existing artifact embeddings backfilled via `POST /api/brain/generate-embeddings`
