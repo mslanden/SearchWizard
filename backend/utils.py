@@ -262,6 +262,43 @@ def extract_text_from_pdf(pdf_content):
         return f"[PDF text extraction failed: {str(e)}]"
 
 
+def extract_text_from_docx(file_bytes: bytes) -> str:
+    """
+    Extract plain text from a DOCX file's bytes.
+
+    Args:
+        file_bytes: Raw DOCX file content as bytes.
+
+    Returns:
+        Extracted text string.
+    """
+    try:
+        import io
+        from docx import Document
+
+        doc = Document(io.BytesIO(file_bytes))
+        parts = []
+
+        for para in doc.paragraphs:
+            text = para.text.strip()
+            if text:
+                parts.append(text)
+
+        for table in doc.tables:
+            for row in table.rows:
+                row_texts = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                if row_texts:
+                    parts.append(" | ".join(row_texts))
+
+        result = "\n\n".join(parts)
+        logger.info(f"Extracted {len(result)} chars from DOCX")
+        return result
+
+    except Exception as e:
+        logger.error(f"Error extracting text from DOCX: {e}")
+        return f"[DOCX text extraction failed: {str(e)}]"
+
+
 def scrape_url_content(url: str) -> str:
     """
     Scrape and extract text content from a URL.

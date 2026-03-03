@@ -15,12 +15,16 @@ import io
 import anthropic
 from typing import Optional, Dict, List, Any
 import uuid
-from fastapi import FastAPI, HTTPException, Body, File, UploadFile, Form, Query
+import asyncio
+from fastapi import FastAPI, HTTPException, Body, File, UploadFile, Form, Query, BackgroundTasks
+from pipeline.pipeline_runner import run_pipeline_and_store
+from brain.brain import build_brain_context, call_claude
+from brain.embedder import embed_and_store
+from pipeline.artifact_processor import process_artifact as process_artifact_fn
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from pdf2image import convert_from_bytes
 from supabase import create_client, Client
 
 # Add the parent directory to sys.path to allow imports
@@ -50,6 +54,7 @@ from utils import extract_text_from_pdf
 SUPABASE_URL = os.environ.get('NEXT_PUBLIC_SUPABASE_URL', '')
 SUPABASE_KEY = os.environ.get('NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY', '')
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
 
 # Generation limits — centralised here so they are easy to tune
 MAX_TEMPLATE_CONTENT_CHARS = 15000   # chars of golden example fed to template creation
@@ -63,6 +68,11 @@ VISION_MAX_TOKENS          = 2000    # max_tokens for PDF visual analysis call
 TEMPLATE_MAX_TOKENS        = 3000    # max_tokens for template prompt creation call
 GENERATION_MAX_TOKENS      = 8000    # max_tokens for final document generation call
 PDF_VISION_PAGES           = 2       # number of PDF pages sent to Claude Vision
+
+# Blueprint pipeline token limits
+BLUEPRINT_SEMANTIC_MAX_TOKENS = 4000
+BLUEPRINT_VISUAL_MAX_TOKENS   = 3000
+BLUEPRINT_LAYOUT_MAX_TOKENS   = 2000
 
 # Initialize FastAPI app
 app = FastAPI(title="Search Wizard API", 
@@ -171,7 +181,6 @@ async def create_template(
     try:
         import base64
         import io
-        from pdf2image import convert_from_bytes
         import anthropic
 
         if not SUPABASE_URL or not SUPABASE_KEY:
@@ -202,21 +211,21 @@ async def create_template(
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to initialize Anthropic client: {str(e)}")
         
-        # Convert PDF to images for Claude Vision (if PDF)
+        # Convert PDF to images for Claude Vision (if PDF) — uses PyMuPDF, no poppler required
         visual_data = {}
         if file.content_type == "application/pdf":
             try:
-                # Convert PDF to images
-                images = convert_from_bytes(file_content, first_page=1, last_page=PDF_VISION_PAGES + 1)
-
-                # Prepare images for Claude Vision
+                import fitz  # PyMuPDF
+                doc = fitz.open(stream=file_content, filetype="pdf")
+                mat = fitz.Matrix(1.5, 1.5)  # 108 DPI equivalent
                 image_data = []
-                for i, image in enumerate(images[:PDF_VISION_PAGES]):
-                    buffer = io.BytesIO()
-                    image.save(buffer, format='PNG')
-                    buffer.seek(0)
-                    image_b64 = base64.b64encode(buffer.getvalue()).decode()
-                    image_data.append(image_b64)
+                for i, page in enumerate(doc):
+                    if i >= PDF_VISION_PAGES:
+                        break
+                    pix = page.get_pixmap(matrix=mat)
+                    png_bytes = pix.tobytes("png")
+                    image_data.append(base64.b64encode(png_bytes).decode())
+                doc.close()
                 
                 visual_prompt = """Analyze this document's visual design and styling. Extract:
 1. Color scheme (background, text, accent colors)
@@ -352,6 +361,157 @@ Return ONLY the template prompt text that will be used for document generation."
         print(f"Template creation error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error creating template: {str(e)}")
 
+# ---------------------------------------------------------------------------
+# V3 Template creation — async Document DNA pipeline
+# ---------------------------------------------------------------------------
+
+@app.post("/api/templates/v3", status_code=202)
+async def create_template_v3(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    name: str = Form(...),
+    user_id: str = Form(...),
+    document_type: str = Form(None),
+):
+    """
+    Create a golden example template using the V3 Document DNA pipeline.
+
+    Returns HTTP 202 immediately after uploading the file and inserting a
+    'processing' DB record.  The blueprint is built asynchronously in the
+    background; poll GET /api/templates/{id}/status for completion.
+    """
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise HTTPException(status_code=500, detail="Supabase configuration missing")
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=500, detail="Anthropic API key not configured")
+
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+    file_bytes = await file.read()
+    if len(file_bytes) < 10:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty or too small")
+
+    # Resolve document_type
+    if not document_type:
+        document_type = "document"
+
+    # Upload file to Supabase storage
+    file_extension = os.path.splitext(file.filename or "file")[1]
+    storage_filename = f"{user_id}/{name}_{datetime.datetime.utcnow().isoformat()}{file_extension}"
+    original_file_url = None
+    try:
+        supabase.storage.from_("golden-examples").upload(
+            storage_filename, file_bytes, {"content-type": file.content_type or "application/octet-stream"}
+        )
+        original_file_url = supabase.storage.from_("golden-examples").get_public_url(storage_filename)
+    except Exception as e:
+        print(f"V3 file upload failed: {e}")
+
+    # Insert DB record with status='processing'
+    template_id = str(uuid.uuid4())
+    template_data = {
+        "id": template_id,
+        "name": name,
+        "user_id": user_id,
+        "document_type": document_type,
+        "file_type": file.content_type or "application/octet-stream",
+        "original_content": "",
+        "template_prompt": None,
+        "visual_data": None,
+        "blueprint": None,
+        "status": "processing",
+        "original_file_url": original_file_url,
+        "file_size": len(file_bytes),
+        "usage_count": 0,
+        "is_global": False,
+        "version": 3,
+        "date_added": datetime.datetime.utcnow().isoformat(),
+    }
+    supabase.table("golden_examples").insert(template_data).execute()
+
+    # Dispatch pipeline as a background task
+    background_tasks.add_task(
+        run_pipeline_and_store,
+        SUPABASE_URL,
+        SUPABASE_KEY,
+        ANTHROPIC_API_KEY,
+        template_id,
+        file_bytes,
+        file.filename or f"file{file_extension}",
+        document_type,
+    )
+
+    return {"template_id": template_id, "status": "processing"}
+
+
+@app.get("/api/templates/{template_id}/status")
+async def get_template_status(template_id: str, user_id: str = Query(...)):
+    """Poll the processing status of a V3 template blueprint pipeline."""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise HTTPException(status_code=500, detail="Supabase configuration missing")
+
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    response = (
+        supabase.table("golden_examples")
+        .select("id, status, blueprint, processing_error")
+        .eq("id", template_id)
+        .eq("user_id", user_id)
+        .single()
+        .execute()
+    )
+
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Template not found or access denied")
+
+    record = response.data
+    return {
+        "status": record.get("status", "ready"),
+        "blueprint": record.get("blueprint"),
+        "error": record.get("processing_error"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Helper: convert a V3 blueprint into a generation prompt (V2-compatible)
+# ---------------------------------------------------------------------------
+
+def _blueprint_to_generation_prompt(blueprint: dict) -> str:
+    """
+    Serialise a JSON blueprint into a structured generation prompt string
+    that the existing generate_document_v2 handler can consume.
+    """
+    import json
+
+    content_spec = blueprint.get("content_structure_spec", {})
+    layout_spec = blueprint.get("layout_spec", {})
+    visual_spec = blueprint.get("visual_style_spec", {})
+
+    sections = content_spec.get("sections", [])
+    section_lines = []
+    for s in sections:
+        indent = "  " * (s.get("depth", 1) - 1)
+        section_lines.append(
+            f"{indent}- [{s.get('intent', '').upper()}] {s.get('title', '')}: "
+            f"{s.get('micro_template', '')}"
+        )
+
+    prompt = f"""DOCUMENT STRUCTURE (from blueprint analysis):
+{chr(10).join(section_lines)}
+
+LAYOUT SPECIFICATION:
+- Page size: {layout_spec.get('page_size', 'A4')}
+- Column structure: {layout_spec.get('column_structure', 'single')}
+- Margins: {json.dumps(layout_spec.get('margins_pt', {}))}
+
+VISUAL STYLE:
+- Typography: {json.dumps(visual_spec.get('typography', {}), indent=2)}
+- Color palette: {json.dumps(visual_spec.get('color_palette', {}), indent=2)}
+
+Follow this structure precisely when generating the document. Use the section intents and micro-templates as writing guidance. Apply the visual style tokens to format headings, body text, and tables."""
+
+    return prompt
+
+
 # Template listing endpoint
 @app.get("/api/templates")
 async def list_templates(user_id: str = Query(...)):
@@ -363,7 +523,8 @@ async def list_templates(user_id: str = Query(...)):
 
         # Get user's templates + global templates
         response = supabase.table('golden_examples').select(
-            'id, name, document_type, file_type, original_file_url, usage_count, date_added, visual_data, version'
+            'id, name, document_type, file_type, original_file_url, usage_count, date_added, '
+            'visual_data, version, status, blueprint, template_prompt'
         ).or_(f'user_id.eq.{user_id},is_global.eq.true').order('date_added', desc=True).execute()
         
         return {"templates": response.data}
@@ -419,7 +580,16 @@ async def generate_document_v2(
             raise HTTPException(status_code=404, detail="Template not found")
         
         template = template_response.data
-        
+
+        # Build generation prompt — prefer V3 blueprint when available
+        blueprint = template.get("blueprint")
+        if blueprint:
+            template_prompt_text = _blueprint_to_generation_prompt(blueprint)
+            visual_data_json = blueprint.get("visual_style_spec", {})
+        else:
+            template_prompt_text = template.get("template_prompt", "")
+            visual_data_json = template.get("visual_data", {})
+
         # Get project artifacts
         artifacts_response = supabase.table('artifacts').select('*').eq('project_id', project_id).execute()
         artifacts = artifacts_response.data or []
@@ -483,7 +653,7 @@ async def generate_document_v2(
         
         # Create comprehensive generation prompt
         generation_prompt = f"""
-{template.get('template_prompt', '')}
+{template_prompt_text}
 
 COMPANY CONTEXT:
 {company_context}
@@ -498,7 +668,7 @@ PROCESS/INTERVIEWER INFORMATION:
 {process_context}
 
 VISUAL STYLING REQUIREMENTS:
-{json.dumps(template.get('visual_data', {}), indent=2)}
+{json.dumps(visual_data_json, indent=2)}
 
 USER SPECIFIC REQUIREMENTS:
 {user_requirements}
@@ -534,6 +704,201 @@ Generate a complete, professional document that follows the template structure a
     except Exception as e:
         print(f"Document generation error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error generating document: {str(e)}")
+
+@app.post("/api/generate-document/v3")
+async def generate_document_v3_endpoint(
+    template_id:      str           = Body(...),
+    project_id:       str           = Body(...),
+    user_id:          str           = Body(...),
+    user_requirements: str          = Body(default=""),
+    candidate_id:     Optional[str] = Body(default=None),
+    interviewer_id:   Optional[str] = Body(default=None),
+    preview_only:     bool          = Body(default=False),
+):
+    """
+    V3 document generation using Project Brain semantic artifact selection.
+
+    The Brain reads the template's V3 blueprint, scores all project artifacts against
+    the blueprint's section intents using OpenAI embeddings (keyword fallback when
+    embeddings are absent), and composes a structured generation prompt.
+
+    If preview_only=True: returns assembled prompt + selected_artifacts without
+    calling Claude (used by the "Preview Prompt" feature in the frontend).
+    """
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+        context = await build_brain_context(
+            supabase=supabase,
+            project_id=project_id,
+            template_id=template_id,
+            candidate_id=candidate_id,
+            interviewer_id=interviewer_id,
+            user_requirements=user_requirements,
+        )
+
+        if preview_only:
+            return {
+                "prompt": context["prompt"],
+                "selected_artifacts": context["selected_artifacts"],
+            }
+
+        html_content = await call_claude(
+            anthropic_client=anthropic_client,
+            prompt=context["prompt"],
+            max_tokens=GENERATION_MAX_TOKENS,
+        )
+
+        # Increment template usage count
+        try:
+            template_resp = supabase.table('golden_examples').select(
+                'usage_count'
+            ).eq('id', template_id).single().execute()
+            current_count = (template_resp.data or {}).get('usage_count', 0) or 0
+            supabase.table('golden_examples').update(
+                {'usage_count': current_count + 1}
+            ).eq('id', template_id).execute()
+        except Exception:
+            pass  # Non-critical
+
+        return {
+            "success": True,
+            "html_content": html_content,
+            "selected_artifacts": context["selected_artifacts"],
+            "document_type": context.get("document_type", ""),
+            "timestamp": datetime.datetime.now().isoformat(),
+        }
+
+    except Exception as e:
+        print(f"V3 document generation error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating document: {str(e)}")
+
+
+@app.post("/api/artifacts/embed")
+async def embed_artifact_endpoint(
+    artifact_id: str = Body(...),
+    table:       str = Body(...),
+    user_id:     str = Body(...),
+):
+    """
+    Generate and store an embedding for a single artifact.
+    Called fire-and-forget from the frontend immediately after artifact upload.
+    Supported tables: 'artifacts', 'candidate_artifacts', 'process_artifacts'.
+    """
+    allowed_tables = {'artifacts', 'candidate_artifacts', 'process_artifacts'}
+    if table not in allowed_tables:
+        raise HTTPException(status_code=400, detail=f"Invalid table: {table}")
+
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        art_resp = supabase.table(table).select('*').eq('id', artifact_id).single().execute()
+        if not art_resp.data:
+            raise HTTPException(status_code=404, detail="Artifact not found")
+        await embed_and_store(supabase, artifact_id, table, art_resp.data)
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Artifact embed error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating embedding: {str(e)}")
+
+
+@app.post("/api/artifacts/process")
+async def process_artifact_endpoint(
+    artifact_id: str = Body(...),
+    table:       str = Body(...),
+    user_id:     str = Body(...),
+):
+    """
+    Enrich a single artifact with a Claude-generated summary and tags, then
+    re-generate its embedding from the enriched text.
+
+    Called fire-and-forget from the frontend immediately after artifact upload,
+    replacing the old /api/artifacts/embed call for new uploads.
+    Supported tables: 'artifacts', 'candidate_artifacts', 'process_artifacts'.
+
+    Runs Claude synchronously (no BackgroundTask) so exceptions are caught and
+    logged — graceful degradation to raw-content embedding if Claude fails.
+    """
+    allowed_tables = {'artifacts', 'candidate_artifacts', 'process_artifacts'}
+    if table not in allowed_tables:
+        raise HTTPException(status_code=400, detail=f"Invalid table: {table}")
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        result = await process_artifact_fn(supabase, artifact_id, table, ANTHROPIC_API_KEY)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[/api/artifacts/process] Error for {artifact_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error processing artifact: {str(e)}")
+
+
+async def _backfill_all_processing(supabase) -> None:
+    """Background task: run process_artifact for all artifacts with null summary."""
+    for table in ('artifacts', 'candidate_artifacts', 'process_artifacts'):
+        try:
+            resp = supabase.table(table).select('id').is_('summary', 'null').execute()
+            ids = [row['id'] for row in (resp.data or [])]
+            print(f"[backfill/process] {table}: {len(ids)} artifacts to process")
+            for artifact_id in ids:
+                try:
+                    await process_artifact_fn(supabase, artifact_id, table, ANTHROPIC_API_KEY)
+                    print(f"[backfill/process] OK: {table}/{artifact_id}")
+                except Exception as e:
+                    print(f"[backfill/process] FAIL: {table}/{artifact_id}: {e}")
+        except Exception as e:
+            print(f"[backfill/process] query failed for {table}: {e}")
+
+
+@app.post("/api/brain/process-artifacts")
+async def backfill_processing(
+    user_id: str = Body(..., embed=True),
+    background_tasks: BackgroundTasks = None,
+):
+    """
+    Admin endpoint: queue summary+tag generation for all artifacts with null summary.
+    Useful for backfilling artifacts uploaded before this feature shipped.
+    Mirrors the pattern of /api/brain/generate-embeddings.
+    """
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    if background_tasks is None:
+        background_tasks = BackgroundTasks()
+    background_tasks.add_task(_backfill_all_processing, supabase)
+    return {"status": "queued", "message": "Artifact processing backfill queued for all tables"}
+
+
+async def _backfill_all_embeddings(supabase) -> None:
+    """Background task: generate embeddings for all artifacts with null embedding."""
+    for table in ('artifacts', 'candidate_artifacts', 'process_artifacts'):
+        try:
+            resp = supabase.table(table).select('*').is_('embedding', 'null').execute()
+            for artifact in (resp.data or []):
+                try:
+                    await embed_and_store(supabase, artifact['id'], table, artifact)
+                    print(f"[backfill] Embedded {table}/{artifact['id']}")
+                except Exception as e:
+                    print(f"[backfill] Failed {table}/{artifact['id']}: {e}")
+        except Exception as e:
+            print(f"[backfill] Failed to query {table}: {e}")
+
+
+@app.post("/api/brain/generate-embeddings")
+async def backfill_embeddings(
+    user_id: str = Body(..., embed=True),
+    background_tasks: BackgroundTasks = None,
+):
+    """
+    Admin endpoint: queue embedding generation for all artifacts with null embeddings.
+    Useful for backfilling existing artifacts uploaded before this feature was introduced.
+    """
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    if background_tasks is None:
+        background_tasks = BackgroundTasks()
+    background_tasks.add_task(_backfill_all_embeddings, supabase)
+    return {"status": "queued", "message": "Embedding backfill queued for all artifact tables"}
+
 
 @app.get("/")
 async def root():

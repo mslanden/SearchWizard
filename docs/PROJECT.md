@@ -1,4 +1,4 @@
-# SearchWizard — Project Brain
+# SearchWizard — Project Overview
 
 > Central reference document. Keep this up to date. Every AI session and every
 > human developer should read this before making changes.
@@ -43,10 +43,25 @@ Next.js Frontend (Vercel)
     ▼
 FastAPI Backend (Railway)
     │  Document generation pipeline (V2 — direct Claude API call)
-    │  Golden example analysis pipeline
+    │  Golden example analysis pipeline (V3 — multi-stage async blueprint pipeline)
     │  File parsing pipeline
     │
-    ├── StructureAgent  →  analyzes uploaded golden examples → template_prompt + visual_data
+    ├── pipeline/             (blueprint pipeline — see Data Flow: Blueprint Pipeline)
+    │   ├── preprocessor.py       →  Stage A: file bytes → Intermediate Document Model (IDM)
+    │   ├── ocr_enricher.py       →  Stage A.5: Vision OCR enrichment for sparse PDFs (<500 chars/page)
+    │   ├── semantic_analyzer.py  →  Stage B: IDM → ContentStructureSpec (Claude tool use + Vision)
+    │   ├── layout_analyzer.py    →  Stage C: IDM → LayoutSpec (algorithmic + Claude fallback)
+    │   ├── visual_style_analyzer.py  →  Stage D: IDM → VisualStyleSpec (PyMuPDF + Claude Vision)
+    │   ├── blueprint_assembler.py    →  Stage E: merge B+C+D → JSONBlueprint
+    │   └── pipeline_runner.py        →  orchestrator (asyncio.gather for B/C/D concurrency)
+    ├── brain/                (Project Brain — semantic artifact retrieval for V3 generation)
+    │   ├── embedder.py           →  OpenAI text-embedding-3-small; embed_and_store()
+    │   ├── artifact_fetcher.py   →  fetch all artifacts for a generation task (company/role/candidate/process)
+    │   ├── knowledge_graph.py    →  Supabase FK traversal: project → entities
+    │   ├── relevance_ranker.py   →  cosine similarity scoring; keyword fallback
+    │   ├── prompt_builder.py     →  assemble section-aware generation prompt
+    │   └── brain.py              →  orchestrator: build_brain_context() + call_claude()
+    ├── StructureAgent  →  analyzes uploaded golden examples → template_prompt + visual_data (V2, kept)
     ├── ImageAnalyzer   →  extracts images/layout from PDF golden examples
     ├── DocumentParser  →  LlamaParse premium → fast → PyMuPDF → fallback
     ├── CacheService    →  Redis (optional) / in-memory fallback
@@ -64,7 +79,33 @@ Supabase
     │                   project-outputs, golden-examples
 ```
 
-### Data Flow — Document Generation (V2)
+### Data Flow — Document Generation (V3 — Project Brain)
+
+1. User opens **Generate Document** popup; selects a V3 template, optionally selects a candidate
+   and/or interviewer, adds requirements, clicks **Generate by Magic** or **Preview Prompt**
+2. Frontend `useDocumentGenerationV3` hook calls `POST /api/generate-document/v3`
+   (`preview_only: false` for direct generation; `preview_only: true` for preview)
+3. Backend `generate_document_v3_endpoint` runs the **Project Brain** pipeline:
+   - **Fetch blueprint** from `golden_examples.blueprint` (raises 400 if null — V3 required)
+   - **Fetch all artifacts** for the project (company + role + candidate + process, per selection)
+   - **Build entity context** from project/candidate/interviewer DB records
+   - **Rank artifacts** against blueprint section intents via OpenAI embeddings (cosine similarity)
+     + keyword fallback when embeddings are absent
+   - **Assemble section-aware prompt**: each section gets its top-3 matched artifacts as context
+4. If `preview_only=true`: returns `{prompt, selected_artifacts}` — shown in `PromptPreviewModal`
+5. Otherwise: calls `claude-sonnet-4-6` with assembled prompt → HTML document
+6. Frontend saves HTML to Supabase `project-outputs` bucket
+7. Output appears in the project's Outputs section
+
+**Proactive processing on upload:** Each artifact upload fires a non-blocking call to
+`POST /api/artifacts/process` which: (1) calls Claude Sonnet to generate a `summary` and
+extract `tags` (stored in the artifact row), then (2) re-generates the 1536-dim OpenAI
+embedding from the enriched text (`name + type + summary + tags + processed_content`).
+Artifacts with no `processed_content` (e.g. image uploads) are embedded from name + type only.
+Backfill for existing artifacts: `POST /api/brain/process-artifacts` (admin endpoint).
+The legacy `POST /api/artifacts/embed` endpoint is kept for backward compat (embedding only, no summary/tags).
+
+### Data Flow — Document Generation (V2 — legacy, kept for backward compat)
 
 1. User selects a Project and clicks **Generate Document**
 2. Frontend popup (`GenerateDocumentPopup`) collects `templateId` + `userRequirements`
@@ -83,7 +124,7 @@ Supabase
 6. Frontend saves HTML to Supabase `project-outputs` bucket and inserts metadata row
 7. Output appears in the project's Outputs section; viewed inline via `HtmlDocumentViewer`
 
-### Data Flow — Golden Example Upload
+### Data Flow — Golden Example Upload (V2 — legacy, kept for backward compat)
 
 1. User uploads a file via the Golden Examples popup
 2. Backend stores the file in the `golden-examples` Supabase storage bucket
@@ -93,6 +134,38 @@ Supabase
 5. A second Claude call uses that text to produce `template_prompt`
    (a structured instruction block that guides later document generation)
 6. `template_prompt` and `visual_data` are stored in the `golden_examples` DB row
+
+### Data Flow — Blueprint Pipeline (V3)
+
+V3 replaces the single-pass analysis with an async multi-stage pipeline that produces
+a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB column.
+
+1. User uploads a file via the Golden Examples popup
+2. Frontend POSTs to `POST /api/templates/v3` (multipart form)
+3. Backend: stores file in `golden-examples` bucket, inserts a DB record with
+   `status='processing'`, dispatches `run_pipeline_and_store` as a FastAPI `BackgroundTask`
+4. Backend returns **HTTP 202** immediately: `{"template_id": "...", "status": "processing"}`
+5. Frontend starts polling `GET /api/templates/{id}/status` every **4 seconds**
+6. In the background the pipeline stages run:
+   - **Stage A** (sync): `preprocessor.py` → `build_idm()` converts file bytes to the
+     Intermediate Document Model (IDM) — page blocks, span-level style metadata, bboxes
+   - **Stage A.5** (async, PDF only): `ocr_enricher.py` — checks average chars/page; if
+     below 500 chars/page (sparse PDF, e.g. design-heavy InDesign/Illustrator export where
+     headings are vector/outlined text invisible to any text extractor), renders all pages
+     to PNG at 108 DPI and calls Claude Vision to extract all visible text; OCR blocks are
+     appended to the IDM so all downstream stages see the complete document content
+   - **Stages B, C, D** (concurrent via `asyncio.gather`):
+     - B `semantic_analyzer.py` → `ContentStructureSpec` (sections, intents, rhetorical patterns)
+       via Claude tool use; for PDF uploads also passes rendered page images (up to 8 pages,
+       72 DPI) alongside extracted text so Claude identifies document structure from both
+       visual layout and semantic content — the primary strategy for design-heavy PDFs
+     - C `layout_analyzer.py` → `LayoutSpec` (margins, columns, spacing — algorithmic for PDFs, Claude fallback for DOCX)
+     - D `visual_style_analyzer.py` → `VisualStyleSpec` (typography tokens, colour palette — IDM metadata + Claude Vision on rendered PNG pages)
+   - **Stage E** (sync): `blueprint_assembler.py` merges B+C+D → `JSONBlueprint`
+7. On success: `blueprint` JSONB and `status='ready'` written to DB
+8. On failure: `status='error'` + `processing_error` written; frontend shows error badge
+9. Frontend poll detects `status='ready'`, refreshes list, shows BlueprintViewer (3-tab: Content Structure / Layout / Visual Style)
+10. Document generation prefers `blueprint` when present; falls back to `template_prompt` + `visual_data` for old records
 
 ### Frontend Route Map
 
@@ -141,6 +214,8 @@ Supabase
 - Admin approval system (pending users, approve/deny, role management)
 - Dark mode
 - Staging environment (Railway + Vercel) — set up Feb 2026
+- Document DNA Blueprint Pipeline (V3) — async multi-stage golden example analysis (Feb 2026)
+- Project Brain V3 document generation — semantic artifact retrieval, section-aware prompt assembly, candidate/interviewer targeting, Preview Prompt mode (Feb 2026)
 
 ### Known Technical Debt
 - Knowledge base files (`company-overview.txt`, `product-specs.txt`) are template
@@ -165,14 +240,32 @@ Supabase
 1. ✅ Staging environment setup (completed Feb 2026)
 2. ✅ Artifact type system — DB-driven dropdowns for all artifact categories (Feb 2026)
 3. ✅ Code review cleanup — dead code deleted, constants extracted, components consolidated (Feb 2026, commit `86f4227`)
-4. Review and act on the open CVE security patch PR
-5. Make and test significant UI/feature changes on `staging` before pushing to `main`
-6. Fix Bug #22 (Generate New Document dropdown lists file names instead of types) — requires scoping before fixing
-7. Separate Supabase projects (staging vs production) — **required before public launch**
-8. Populate knowledge base files with real Agentica AI content
-9. Remove `WriterAgent` file (`backend/agents/writer_agent.py`) — no longer imported
-10. Centralise the Claude model string into `ANTHROPIC_MODEL` constant or env var
-11. **Download output documents** — add a Download button to the Outputs section / `HtmlDocumentViewer` so users can save generated documents locally (e.g. as HTML or PDF). Currently documents can only be viewed inline.
+4. ✅ Document DNA Blueprint Pipeline (V3) — async multi-stage golden example analysis (Feb 2026)
+   - ✅ Stage A.5 Vision OCR enricher — recovers text from design-heavy PDFs (<500 chars/page avg) so all stages see complete content (Mar 2026)
+   - ✅ Stage B Vision pass — multimodal section detection for PDFs where headings are vector/outlined text invisible to PyMuPDF (Mar 2026)
+   - ✅ Heading detection prompt rewritten — four explicit signals (font size, embedded heading pattern, standalone short blocks, semantic recognition) (Mar 2026)
+   - ✅ Prompt schema bias removed from `_STRUCTURE_TOOL` — example field values no longer name specific section types (Mar 2026)
+5. ✅ Project Brain — semantic artifact retrieval for V3 document generation (Feb 2026)
+   - ✅ Migration 8 applied (pgvector + embedding columns on all artifact tables)
+   - ✅ Existing artifact embeddings backfilled via `POST /api/brain/generate-embeddings`
+   - ✅ End-to-end V3 generation tested and verified on staging
+6. Review and act on the open CVE security patch PR
+7. Make and test significant UI/feature changes on `staging` before pushing to `main`
+8. ✅ Artifact Processing Pipeline — Claude Sonnet generates `summary` + `tags` on upload; embedding re-run from enriched text (Mar 2026)
+   - ✅ `POST /api/artifacts/process` — fire-and-forget enrichment endpoint (replaces `/api/artifacts/embed` for new uploads)
+   - ✅ `POST /api/brain/process-artifacts` — admin backfill endpoint
+   - ✅ `brain/artifact_fetcher.py` — `key_topics` now derived from `tags` (no DB column needed)
+   - Backfill existing artifacts via `POST /api/brain/process-artifacts` after deploying to staging
+9. Fix Bug #36 (BlueprintViewer popup closes on any click — tabs and scroll inaccessible)
+10. Fix Bug #37 (old V2 popup flashes briefly before V3 popup appears on "Generate New")
+11. Fix Bug #22 (Generate New Document dropdown lists file names instead of types)
+12. Fix Bug #35 (company artifact URL upload fails with pattern mismatch error)
+13. Editable prompt in `PromptPreviewModal` — allow user to override Brain-assembled prompt before generation
+14. **Download output documents** — add a Download button to the Outputs section / `HtmlDocumentViewer` so users can save generated documents locally (HTML or DOCX on-demand). Currently documents can only be viewed inline.
+15. Separate Supabase projects (staging vs production) — **required before public launch**
+16. Populate knowledge base files with real Agentica AI content
+17. Remove `WriterAgent` file (`backend/agents/writer_agent.py`) — no longer imported
+18. Centralise the Claude model string into `ANTHROPIC_MODEL` constant or env var
 
 ### Open Bug Log (Staging — Feb 2026)
 
@@ -207,6 +300,8 @@ Supabase
 | 31 | Artifact tables: no visible scrollbar when content overflows — rightmost columns (including delete button) are cut off and not obviously reachable | Fixed in `8ce0b58` | Changed `overflow-x-auto` to `overflow-x-scroll` in `ArtifactsSection.tsx`; wrapped the `<table>` in `<div className="overflow-x-scroll">` in `CandidatesSection.jsx` and `InterviewersSection.jsx` (those had no wrapper at all) — scrollbar is now always visible |
 | 30 | Adding a Company artifact via URL input fails — "Source URL is required for URL artifacts" | Fixed in `8ce0b58` | `UnifiedArtifactUploadPopup.tsx` was spreading `{ url: url.trim() }` for URL input type, but `projectApi.addCompanyArtifact`/`addRoleArtifact` check `artifactData.sourceUrl`. Fixed by changing the spread key from `url` to `sourceUrl` — matching the `ArtifactUploadData` type definition |
 | 35 | Company artifact URL upload fails — "The string did not match the expected pattern" — page crashes to "Error Loading Project" | Open | Two toasts appear simultaneously: green "Company artifact uploaded successfully" (storage upload succeeded) and red "Failed to upload company artifact — The string did not match the expected pattern." The error is from Supabase and indicates a pattern/UUID constraint violation during the DB insert, not a storage failure. Distinct from Bug #30 (different error message; `sourceUrl` key fix is in place). Likely a field receiving a value in the wrong format (e.g. a UUID column receiving a URL string, or vice versa). Do not fix until investigated. |
+| 36 | BlueprintViewer popup closes on any click — user cannot switch tabs (Layout / Visual Style) or scroll | Open | Click handler on the modal backdrop captures all clicks including those on inner content. Do not fix until scoped. |
+| 37 | Clicking "Generate New" briefly flashes the old V2 popup before the V3 popup appears | Open | Both V2 and V3 popup components may be mounted simultaneously during the transition; V2 renders first before V3 state is ready. Do not fix until scoped. |
 
 ---
 

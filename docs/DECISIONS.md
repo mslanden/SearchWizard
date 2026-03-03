@@ -296,3 +296,239 @@ A full code review cleanup pass was performed in commit `86f4227` on the `stagin
 `app/api/generate-document/route.js` called the legacy backend endpoint
 `/generate-document` — a different path from the V2 endpoint. Neither the proxy
 nor the legacy endpoint had any callers in the current codebase.
+
+---
+
+## ADR-011 — Document DNA Multi-Stage Blueprint Pipeline (Feb 2026)
+
+**Status:** Active (on staging)
+
+**Decision:**
+Replace the single-pass golden example analysis (StructureAgent → `template_prompt` + `visual_data`)
+with a five-stage async pipeline that produces a machine-readable **JSON Blueprint** stored in
+`golden_examples.blueprint` (JSONB). All existing golden example records are deleted by users
+and reprocessed — no migration of old records needed.
+
+**Pipeline stages:**
+- **A — Preprocessor** (sync): file bytes → Intermediate Document Model (IDM). PyMuPDF `get_text("dict")` for native PDFs; python-docx for DOCX; minimal single-block IDM for images.
+- **B — Semantic Analyzer** (async): IDM → `ContentStructureSpec`. Claude `claude-sonnet-4-6` with tool use (`tool_choice={"type":"tool","name":"document_structure"}`) to enforce JSON schema output. Condensed text representation sent to Claude (max 12,000 chars).
+- **C — Layout Analyzer** (async): IDM → `LayoutSpec`. Algorithmic for PDFs (margin detection from min/max block positions, column clustering, header/footer detection by page-coverage frequency, spacing from y-gap medians). Claude fallback for DOCX (no bboxes available).
+- **D — Visual Style Analyzer** (async): IDM + file bytes → `VisualStyleSpec`. Algorithmic first (span style aggregation by role, colour census). Claude Vision second (first 2 pages rendered to PNG via `fitz.page.get_pixmap(matrix=fitz.Matrix(1.5,1.5)).tobytes("png")`) — asks Claude to confirm / correct candidate tokens.
+- **E — Blueprint Assembler** (sync): merges B+C+D → `JSONBlueprint` with `blueprint_id`, `generated_at`, and all three specs. Validates required fields; fills missing with sentinel `{"value": null, "inferred": true}`.
+
+**Key choices and reasoning:**
+
+| Choice | Alternative considered | Reason chosen |
+|--------|----------------------|---------------|
+| FastAPI `BackgroundTasks` | Redis/Celery queue | No new infra — Railway already runs FastAPI; at current scale BackgroundTasks is sufficient |
+| `asyncio.gather` for B/C/D | Sequential execution | ~3× faster; each stage is independently I/O-bound (Claude API calls) |
+| PyMuPDF `get_pixmap` for PNG rendering | pdf2image/poppler | PyMuPDF already installed; poppler adds a Railway system dependency and build complexity |
+| Claude Sonnet 4.6 for all stages | GPT for semantic, Gemini for visual | Single provider: simpler, consistent, lower latency; revisit if quality gaps identified |
+| JSON Blueprint (3 separate specs) | Single template_prompt string | Machine-readable structure enables future multi-example synthesis (pass list of IDMs to B/C/D) and deterministic DOCX rendering without reverse-parsing a prompt string |
+| HTTP 202 + polling | SSE / WebSocket | Simplest frontend implementation; 4-second polling with 75-attempt (5-minute) timeout adequate for pipeline duration (30–90 s typical) |
+
+**Backward compatibility:**
+- Old `POST /api/templates` endpoint kept intact (returns 200 synchronously).
+- `generate_document_v2` prefers `blueprint` when present; falls back to `template_prompt` + `visual_data` for existing records.
+- Old `template_prompt` / `visual_data` columns left in place (not dropped).
+
+**Future path:**
+- Multi-example synthesis: pass list of IDMs to Stages B/C/D; `asyncio.gather` already accepts lists — currently always length 1.
+- New document generation system consuming `JSONBlueprint` → structured DOCX via python-docx (planned, separate session).
+- Download Feature #11: HTML preview (existing) + DOCX on-demand from same Document JSON intermediate.
+
+---
+
+## ADR-012 — Project Brain Semantic Artifact Retrieval (Feb 2026)
+
+**Status:** Active (on staging)
+
+**Decision:**
+Replace the blind artifact inclusion in `generate_document_v2` (fixed limits: 3 company + 3 role artifacts)
+with a semantic retrieval engine (`backend/brain/`) that scores all available artifacts against the
+blueprint's section intents and composes a section-aware generation prompt. Introduces a new
+`POST /api/generate-document/v3` endpoint and a redesigned Generate popup with candidate/interviewer
+selection and a "Preview Prompt" mode.
+
+**Key choices and reasoning:**
+
+| Choice | Alternative | Reason |
+|--------|-------------|--------|
+| OpenAI `text-embedding-3-small` (1536 dims) | Anthropic (no embeddings API), self-hosted | OpenAI key already in env; 1536 dims balances quality vs. storage cost |
+| pgvector on Supabase Pro | Pinecone/Weaviate, Redis vector | No new infra — pgvector is a Postgres extension, Supabase Pro already includes it |
+| ivfflat index (cosine) | hnsw | ivfflat is simpler to tune at current artifact volumes (<10,000 rows) |
+| Supabase FK traversal (Option B) | Graph DB (Neo4j, etc.) | No new infra; at current scale JOIN traversal is sufficient |
+| Keyword fallback scoring | Require embeddings | Brain works from day one before any embeddings are generated |
+| Fire-and-forget embed on upload | Sync embed during upload | Does not block the upload response; graceful failure if OpenAI is unavailable |
+| `preview_only=True` mode | Separate "get prompt" endpoint | Single endpoint, single payload — simpler frontend and backend contract |
+| Old `generate_document_v2` kept | Remove immediately | Low-risk; removal planned for a future cleanup session |
+
+**Metadata stubs:**
+`summary TEXT` and `tags TEXT[]` columns added to all three artifact tables. Always NULL until
+the future **Artifact Processing Pipeline** populates them. The Brain checks these fields and
+uses them when present; falls back to raw `processed_content` when absent.
+
+**Implementation notes (bugs found and fixed during initial deployment):**
+- `POST /api/templates/v3` was missing `status_code=202` in the FastAPI decorator, causing the
+  frontend (which checks `response.status === 202`) to fall through to the V2 error path. Fixed
+  by adding `status_code=202` to the decorator (`afaa2c8`).
+- pgvector columns returned by Supabase REST API arrive as JSON strings (`"[-0.029,...]"`), not
+  Python lists. `cosine_similarity` (numpy) cannot accept a string. Fixed by adding `_parse_embedding()`
+  helper in `relevance_ranker.py` that calls `json.loads()` when the value is a string (`65c0079`).
+- Migration 7 (`processing_error`, `processing_started_at`, `processing_completed_at`) was only
+  partially applied on the shared Supabase project — pipeline crashed silently on its first DB write.
+  Applied as a separate fix. Always run the full Migration 7 block on new environments (see SETUP.md).
+
+**Future path:**
+- ✅ Artifact Processing Pipeline shipped (Mar 2026) — see ADR-013
+- Editable prompt in `PromptPreviewModal`: allow user to override Brain-assembled prompt before generation
+- Candidate → Role → Competency multi-hop graph traversal (extend `brain/knowledge_graph.py`)
+
+---
+
+## ADR-013 — Artifact Processing Pipeline: Claude Tool Use, Sync Endpoint (Mar 2026)
+
+**Status:** Active (on staging)
+
+**Decision:**
+On artifact upload, fire-and-forget a call to `POST /api/artifacts/process` (replacing the
+old `/api/artifacts/embed` call). The endpoint runs `pipeline/artifact_processor.py` which:
+1. Calls Claude Sonnet 4.6 (tool use) to generate a `summary` (80-150 word semantically dense
+   paragraph) and extract `tags` (5-15 specific hyphenated keywords)
+2. Stores both in the existing `summary TEXT` / `tags TEXT[]` columns (no new migrations needed)
+3. Re-generates the 1536-dim OpenAI embedding from the enriched text
+   (`name + type + summary + tags + processed_content`) and stores it
+
+The artifact's `description` field (user-provided at upload time) is included in the Claude
+prompt as the highest-priority context signal — it often clarifies an artifact's role in the
+engagement in ways the raw content alone cannot (e.g. "This is the hiring manager for this role").
+
+**Key choices and reasoning:**
+
+| Choice | Alternative | Reason |
+|--------|-------------|--------|
+| Claude Sonnet 4.6 (not Haiku) | Haiku (faster, cheaper) | Summary quality is the primary embedding signal; poor summaries cascade into poor artifact-section matching and degrade document accuracy. One call per artifact lifetime justifies the cost. |
+| Tool use (`artifact_enrichment` tool) | Plain JSON prompt | Matches `semantic_analyzer.py` pattern. Enforces schema contract; eliminates JSON parse fragility. |
+| Synchronous async within endpoint (no BackgroundTask) | FastAPI BackgroundTask | BackgroundTask swallows exceptions silently (known project gotcha). Sync means failures surface in Railway logs and graceful degradation is deterministic. Frontend is fire-and-forget so endpoint latency is invisible. |
+| `key_topics` derived from `tags` in-memory | New DB column | Zero migration. The `artifact_fetcher.py` stub already existed; filling it from `tags` resolves the TODO without schema change. |
+| Graceful degradation on Claude failure | Block artifact until processing succeeds | Upload flow must remain reliable. Embedding from raw content is better than no embedding. |
+| Sequential backfill (`POST /api/brain/process-artifacts`) | Concurrent backfill | Sequential processing respects Anthropic rate limits at current artifact volumes (<500 rows). |
+
+**Files introduced:**
+- `backend/pipeline/artifact_processor.py` (new module)
+
+**Files modified:**
+- `backend/api.py` — import + `POST /api/artifacts/process` + `POST /api/brain/process-artifacts`
+- `backend/brain/artifact_fetcher.py` — `key_topics` derived from `tags`; TODO comments removed
+- `backend/brain/embedder.py` — stale NOTE comment removed
+- `frontend/src/lib/api/projectApi.js` — fire-and-forget target updated (2 locations)
+- `frontend/src/lib/api/candidateApi.js` — fire-and-forget target updated
+- `frontend/src/lib/api/interviewerApi.js` — fire-and-forget target updated
+
+**No DB migrations required.**
+`summary TEXT` and `tags TEXT[]` columns already exist on `artifacts`, `candidate_artifacts`,
+and `process_artifacts` (added in Migration 8 as stubs). The Supabase Python client
+serialises `list[str]` → `TEXT[]` natively.
+
+---
+
+## ADR-014 — Blueprint Pipeline: Vision OCR Enricher, Stage B Vision Pass, Prompt Bias Fixes (Mar 2026)
+
+**Status:** Active (merged to production)
+
+**Context:**
+During testing of the V3 Blueprint Pipeline on an EgonZehnder role specification PDF,
+Stage B (Semantic Analyzer) consistently returned only 2 sections — "Critical Experiences
+and Capabilities" and "Personal Attributes" — instead of the 6+ major sections visible
+in the document. Railway logs showed: `condensed text 1484 chars, 26 blocks, unique font
+sizes: [10.0, 10.4, 12.0]` for a 9-page document (expected ~18,000+ chars). Root cause:
+the PDF was an InDesign/design-tool export where all major headings are stored as
+vector/outlined text, invisible to PyMuPDF `get_text("dict")` and any other text
+extraction library. No extraction library can recover outlined text; only Vision can read it.
+
+A second root cause was also identified: example field values in the `_STRUCTURE_TOOL`
+JSON schema were unintentionally acting as prompt injection — the `content_guidelines`
+description literally named "Critical Experiences and Personal Attributes categories"
+(the exact two sections Claude was returning), and `rhetorical_pattern` described the
+candidate profile section's table structure precisely.
+
+**Four fixes shipped:**
+
+### Fix 1 — Prompt schema bias removed from `_STRUCTURE_TOOL`
+The `content_guidelines` description example and `rhetorical_pattern` example in the
+`document_structure` tool schema were replaced with fully generic descriptions that do
+not name any specific document type's section names. This removed the unintentional
+prompt injection that caused Claude to always return the same two sections regardless
+of the actual document content.
+
+### Fix 2 — Heading detection signals rewritten (`_SYSTEM_PROMPT` Step 1)
+The heading detection instructions were rewritten with four explicit, prioritised signals:
+- **SIGNAL A — Font size:** font 1.4× or more above the most common body size
+- **SIGNAL B — Embedded heading pattern:** short phrase (2–6 words) at the start of a
+  block before longer elaboration. No period requirement (design PDFs rarely terminate
+  standalone headings with a period; the pattern "Role Location. The company…" has a
+  period only because the heading is embedded within a run-on sentence — the period
+  is not the signal, the short phrase + elaboration pattern is)
+- **SIGNAL C — Standalone short blocks:** block of <40 chars preceding a longer block
+- **SIGNAL D — Semantic recognition (most important for design PDFs):** Claude uses
+  language understanding to identify section topic changes from the content itself,
+  without any typographic signal at all. Explicitly marked as the primary strategy when
+  typography signals are absent (sparse PDFs, design-heavy exports)
+
+### Fix 3 — Claude Vision pass added to Stage B (`semantic_analyzer.py`)
+For PDF uploads, `analyze_semantic()` now accepts `file_bytes` and `source_format`
+parameters. When `source_format == "pdf"` and `file_bytes` is provided, it renders
+up to 8 pages at 72 DPI (1.0× scale) to PNG and builds a multimodal Claude message:
+page images first (so Claude sees the visual document structure), followed by the
+extracted text as a supplementary reference. This allows Claude to identify section
+boundaries from the visual layout even when headings are not extractable as text.
+
+### Fix 4 — Stage A.5 Vision OCR Enricher (`ocr_enricher.py`)
+A new pipeline stage inserted between Stage A (Preprocessor) and Stages B/C/D runs
+for PDF files only. It checks whether the IDM contains on average fewer than 500
+chars per page. When sparse:
+- Renders all pages to PNG at 108 DPI (1.5× scale — higher quality than Stage B's
+  72 DPI pass, appropriate for text extraction accuracy)
+- Makes a single Claude Vision call using tool use (`ocr_extract` tool) with all page
+  images; Anthropic handles string escaping so special characters in OCR'd text
+  (backslashes, quotes, raw newlines) can never produce a JSON parse error
+- Appends OCR blocks to the existing IDM pages (does not replace PyMuPDF blocks,
+  which may carry useful style metadata)
+- Sets `idm["metadata"]["ocr_enriched"] = True`
+- Falls back gracefully to the original IDM on any exception
+
+**Post-deploy fix (commit `cfdfe67`):** The initial implementation requested a raw JSON
+response from Claude. During live testing the OCR'd text contained characters that Claude
+did not escape correctly inside JSON string values, causing `json.loads()` to fail at
+character 4336 with "Expecting ',' delimiter". The graceful fallback caught it but
+Stage A.5 produced no enrichment for that run. Fixed by switching to tool use, consistent
+with every other stage in the pipeline. `_OCR_MAX_TOKENS` also raised from 6000 → 8000
+(near model max) to reduce truncation risk on longer documents.
+
+This means all downstream stages (B, C, D) receive complete document text regardless
+of whether headings are outlined/vector in the source PDF.
+
+**Key choices and reasoning:**
+
+| Choice | Alternative considered | Reason chosen |
+|--------|----------------------|---------------|
+| Claude Vision OCR (Stage A.5) | Tesseract OCR | Tesseract requires `tesseract-ocr` system package on Railway — adds a `nixpacks.toml` dependency and build complexity. Claude Vision requires no new infrastructure and handles design fonts, complex layouts, and multi-column text more accurately than open-source OCR. |
+| Threshold 500 chars/page | Lower threshold | Conservative threshold — EgonZehnder document yielded 165 chars/page (well below threshold); typical text-native PDFs yield 1,500–3,000 chars/page (well above). No risk of false positives on normal PDFs; zero overhead when not triggered. |
+| Append OCR blocks (not replace) | Replace all IDM blocks | PyMuPDF blocks may carry font size, weight, color metadata useful to Stages C and D. Appending preserves this metadata while adding the recovered text. |
+| Single Claude Vision call for all pages | One call per page | Reduces API round-trips and latency. Claude's context window can handle all pages of a typical golden example (≤20 pages) in one call. |
+| Stage A.5 enriches IDM before B/C/D | Enrich only in Stage B | All three stages (B, C, D) benefit from complete text. Layout and visual style analyzers also need text density for accurate header/footer detection. Single enrichment point is cleaner than duplicating Vision calls per stage. |
+| `ocr_enricher.py` filename (not `pdf_ocr_enricher.py`) | `pdf_ocr_enricher.py` | `backend/.gitignore` contains a `pdf_*.py` pattern (intended to exclude ad-hoc test scripts). The `pdf_` prefix caused the file to be gitignored. Renamed to `ocr_enricher.py`. |
+| Tool use for OCR result extraction | Raw JSON response | Live testing revealed that Claude did not escape special characters (backslashes, quotes, raw newlines) inside JSON string values when returning raw text, causing `json.loads()` failures. Tool use delegates serialisation to the Anthropic SDK, which always produces well-formed output regardless of document content. Consistent with every other pipeline stage. |
+
+**Files introduced:**
+- `backend/pipeline/ocr_enricher.py` (new module)
+
+**Files modified:**
+- `backend/pipeline/semantic_analyzer.py` — Vision pass, prompt bias fixes, heading signal rewrite
+- `backend/pipeline/pipeline_runner.py` — Stage A.5 invocation; `_safe_semantic()` updated to pass `file_bytes` + `source_format`
+
+**Commits:**
+- `b89e064` — prompt/schema bias fixes + heading detection rewrite
+- `83fd138` — Claude Vision pass added to Stage B
+- `06df8d9` — Stage A.5 OCR Enricher (`ocr_enricher.py`) + pipeline runner integration
+- `cfdfe67` — Fix Stage A.5: switch to tool use; raise `_OCR_MAX_TOKENS` 6000 → 8000
