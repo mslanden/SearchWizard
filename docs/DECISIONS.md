@@ -15,7 +15,7 @@ as production.
 
 **Reasoning:**
 At time of decision, the app has not launched publicly. All users are internal
-Agentica AI team members and all data is non-production/test data. The setup effort
+SearchWizard.ai team members and all data is non-production/test data. The setup effort
 and cost of a separate Supabase project is not justified at this stage.
 
 **Consequences:**
@@ -88,7 +88,7 @@ The `adminApprovalSystem` feature flag in `/frontend/src/lib/features.js` is set
 admin approves them.
 
 **Reasoning:**
-The app is invite-only for Agentica AI. Open registration without approval would be
+The app is invite-only for SearchWizard.ai. Open registration without approval would be
 a security risk.
 
 **Requirement:**

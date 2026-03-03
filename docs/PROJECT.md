@@ -7,7 +7,7 @@
 
 ## Goal
 
-Build an AI-powered recruitment document generation platform for **Agentica AI**
+Build an AI-powered recruitment document generation platform for **SearchWizard.ai**
 that allows recruiters to:
 - Organise recruitment engagements as **Projects**
 - Upload context documents (**Artifacts**) about the company and role
@@ -22,7 +22,7 @@ that allows recruiters to:
 
 - Not a general-purpose document editor
 - Not a public consumer app — invite-only, admin-approval gated
-- Not a multi-tenant SaaS (single organisation: Agentica AI)
+- Not a multi-tenant SaaS (single organisation: SearchWizard.ai)
 - No mobile-native app (web only)
 
 ---
@@ -263,7 +263,7 @@ a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB 
 13. Editable prompt in `PromptPreviewModal` — allow user to override Brain-assembled prompt before generation
 14. **Download output documents** — add a Download button to the Outputs section / `HtmlDocumentViewer` so users can save generated documents locally (HTML or DOCX on-demand). Currently documents can only be viewed inline.
 15. Separate Supabase projects (staging vs production) — **required before public launch**
-16. Populate knowledge base files with real Agentica AI content
+16. Populate knowledge base files with real SearchWizard.ai content
 17. Remove `WriterAgent` file (`backend/agents/writer_agent.py`) — no longer imported
 18. Centralise the Claude model string into `ANTHROPIC_MODEL` constant or env var
 
@@ -366,7 +366,7 @@ NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
 | **Artifact** | A context document attached to a Project, Candidate, or Interviewer. Can be a file upload, a URL, or pasted text. Stored in `artifacts` (company/role), `candidate_artifacts`, or `process_artifacts`. Each has a specific `artifact_type` slug (e.g. `resume_cv`) drawn from the `artifact_types` table. |
 | **Artifact Type** | A user-visible label for an artifact (e.g. "Resume/CV", "Annual Report"). Stored in the `artifact_types` table, scoped by `category` (`company`, `role`, `candidate`, `process`, `golden`). Managed by admins at `/admin/artifact-types`. Config.js provides a fallback list if the DB is unreachable. |
 | **Golden Example** | A user-uploaded example document that the StructureAgent analyzes to understand the desired structure, tone, and formatting of the output. Types are now drawn from `artifact_types` where `category = 'golden'`. |
-| **Knowledge Base (KB)** | Static files in `/backend/knowledge_base/` injected into every generation prompt. Contains Agentica AI company info and product specs. |
+| **Knowledge Base (KB)** | Static files in `/backend/knowledge_base/` injected into every generation prompt. Contains SearchWizard.ai company info and product specs. |
 | **StructureAgent** | Backend AI agent that reads golden examples and extracts a JSON document template (sections, tone, formatting rules). |
 | **WriterAgent** | Backend AI agent that takes the JSON template + KB content + project artifacts and generates a complete styled HTML document. |
 | **Output** | A generated HTML document produced from a Project. Stored in Supabase `project-outputs` bucket. Viewable inline via `HtmlDocumentViewer`. |
@@ -383,5 +383,5 @@ NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
 | 2 | LlamaParse is always enabled (`ENABLE_LLAMAPARSE=true`) | Feb 2026 | Active |
 | 3 | Redis is optional — in-memory cache fallback is acceptable for now | Feb 2026 | Active |
 | 4 | Admin approval system is always on — no plan to disable it | Feb 2026 | Active |
-| 5 | All current users are internal Agentica AI team members; no real client data yet | Feb 2026 | Active — reassess at launch |
+| 5 | All current users are internal SearchWizard.ai team members; no real client data yet | Feb 2026 | Active — reassess at launch |
 | 6 | Staging and production share one Supabase project (acceptable pre-launch only) | Feb 2026 | Active — see DECISIONS.md |
