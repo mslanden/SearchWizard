@@ -12,7 +12,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { artifactApi } from '../lib/api';
 
 const DEFAULT_BACKEND_URL = 'https://searchwizard-production.up.railway.app';
 const POLL_INTERVAL_MS = 4000;
@@ -156,26 +155,6 @@ export default function useDocumentGenerationV3(projectId, { onOutputGenerated }
     return response.json();
   };
 
-  // ─── Save HTML to Supabase ────────────────────────────────────────────────
-
-  const saveHtmlToSupabase = async (htmlContent, documentType) => {
-    const safeName = (documentName || '(New Document)').replace(/\s+/g, '_');
-    const htmlBlob = new Blob([htmlContent], { type: 'text/html' });
-    const file = new File(
-      [htmlBlob],
-      `${safeName}_${Date.now()}.html`,
-      { type: 'text/html' }
-    );
-
-    const outputData = {
-      name: documentName || '(New Document)',
-      description: `Generated via Project Brain V3`,
-      output_type: documentType || selectedTemplate?.document_type || 'Document',
-    };
-
-    return artifactApi.addProjectOutput(localProjectId, outputData, file);
-  };
-
   // ─── Polling ──────────────────────────────────────────────────────────────
 
   const startPolling = (jobId) => {
@@ -202,13 +181,11 @@ export default function useDocumentGenerationV3(projectId, { onOutputGenerated }
 
         if (data.status === 'ready') {
           clearInterval(pollIntervalRef.current);
-          try {
-            const savedOutput = await saveHtmlToSupabase(data.html_content, data.document_type);
-            if (savedOutput && onOutputGenerated) {
-              onOutputGenerated(savedOutput);
-            }
-          } catch (saveErr) {
-            setError(`Document generated but failed to save: ${saveErr.message}`);
+          if (data.output && onOutputGenerated) {
+            onOutputGenerated({
+              ...data.output,
+              dateCreated: new Date(data.output.dateCreated).toLocaleString(),
+            });
           }
           setIsGenerating(false);
         } else if (data.status === 'error') {

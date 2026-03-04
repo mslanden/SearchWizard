@@ -6,6 +6,7 @@ This FastAPI server exposes endpoints for document generation and other backend 
 """
 
 import os
+import re
 import json
 import sys
 import datetime
@@ -73,10 +74,6 @@ PDF_VISION_PAGES           = 2       # number of PDF pages sent to Claude Vision
 BLUEPRINT_SEMANTIC_MAX_TOKENS = 4000
 BLUEPRINT_VISUAL_MAX_TOKENS   = 3000
 BLUEPRINT_LAYOUT_MAX_TOKENS   = 2000
-
-# In-memory store for async document generation jobs
-# job_id → { status: 'processing'|'ready'|'error', html_content?, document_type?, selected_artifacts?, error? }
-generation_jobs: dict = {}
 
 # Initialize FastAPI app
 app = FastAPI(title="Search Wizard API", 
@@ -710,7 +707,7 @@ Generate a complete, professional document that follows the template structure a
         raise HTTPException(status_code=500, detail=f"Error generating document: {str(e)}")
 
 async def _run_generation_job(
-    job_id: str,
+    output_id: str,
     supabase_url: str,
     supabase_key: str,
     anthropic_api_key: str,
@@ -719,13 +716,16 @@ async def _run_generation_job(
     candidate_id: Optional[str],
     interviewer_id: Optional[str],
     user_requirements: str,
+    user_id: str,
+    document_name: str,
 ) -> None:
     """
-    Background task: run the full V3 generation pipeline and store the result in
-    the in-memory generation_jobs dict.  Called by create_generation_job.
+    Background task: run the full V3 generation pipeline, upload the HTML to
+    Supabase Storage, and update the placeholder project_outputs row.
+    The row ID (output_id) is used as the job_id by the polling endpoint.
     """
+    supabase = create_client(supabase_url, supabase_key)
     try:
-        supabase = create_client(supabase_url, supabase_key)
         anthropic_client = anthropic.Anthropic(api_key=anthropic_api_key)
 
         context = await build_brain_context(
@@ -755,19 +755,34 @@ async def _run_generation_job(
         except Exception:
             pass
 
-        generation_jobs[job_id] = {
-            "status": "ready",
-            "html_content": html_content,
-            "document_type": context.get("document_type", ""),
-            "selected_artifacts": context["selected_artifacts"],
-        }
+        # Upload HTML to Supabase Storage
+        safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', document_name or 'document')
+        ts = int(datetime.datetime.utcnow().timestamp() * 1000)
+        file_path = f"{user_id}/{safe_name}_{ts}.html"
+        html_bytes = html_content.encode('utf-8')
+        supabase.storage.from_('project-outputs').upload(
+            file_path, html_bytes, {'content-type': 'text/html'}
+        )
+        file_url = supabase.storage.from_('project-outputs').get_public_url(file_path)
+
+        document_type = context.get('document_type', '') or 'Document'
+        supabase.table('project_outputs').update({
+            'output_type': document_type,
+            'file_url': file_url,
+            'file_path': file_path,
+            'file_type': 'text/html',
+            'description': '',
+        }).eq('id', output_id).execute()
 
     except Exception as e:
-        print(f"V3 generation job {job_id} failed: {str(e)}")
-        generation_jobs[job_id] = {
-            "status": "error",
-            "error": str(e)[:500],
-        }
+        print(f"V3 generation job {output_id} failed: {str(e)}")
+        try:
+            supabase.table('project_outputs').update({
+                'output_type': 'error',
+                'description': str(e)[:500],
+            }).eq('id', output_id).execute()
+        except Exception:
+            pass
 
 
 @app.post("/api/generate-document/v3", status_code=202)
@@ -809,13 +824,20 @@ async def generate_document_v3_endpoint(
                 "selected_artifacts": context["selected_artifacts"],
             }
 
-        # Async path: submit background job and return 202 immediately
-        job_id = str(uuid.uuid4())
-        generation_jobs[job_id] = {"status": "processing"}
+        # Async path: insert placeholder DB row, dispatch background task, return 202
+        output_id = str(uuid.uuid4())
+        supabase.table('project_outputs').insert({
+            'id': output_id,
+            'project_id': project_id,
+            'name': document_name,
+            'description': '',
+            'output_type': 'generating',
+            'user_id': user_id,
+        }).execute()
 
         background_tasks.add_task(
             _run_generation_job,
-            job_id,
+            output_id,
             SUPABASE_URL,
             SUPABASE_KEY,
             ANTHROPIC_API_KEY,
@@ -824,9 +846,11 @@ async def generate_document_v3_endpoint(
             candidate_id,
             interviewer_id,
             user_requirements,
+            user_id,
+            document_name,
         )
 
-        return {"job_id": job_id, "status": "processing"}
+        return {"job_id": output_id, "status": "processing"}
 
     except Exception as e:
         print(f"V3 document generation error: {str(e)}")
@@ -838,21 +862,40 @@ async def get_generation_job_status(job_id: str):
     """
     Poll the status of an async document generation job.
 
-    Returns status='processing' while the job is running, status='ready' when
-    html_content is available, or status='error' on failure.  The job is removed
-    from memory after the first successful 'ready' response.
+    Looks up the project_outputs row by ID (the row was inserted as a placeholder
+    when the job was submitted).  output_type='generating' → processing,
+    output_type='error' → failed, any other value → ready with the full output.
     """
-    job = generation_jobs.get(job_id)
-    if job is None:
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    try:
+        resp = supabase.table('project_outputs').select(
+            'id, name, output_type, file_url, created_at, description'
+        ).eq('id', job_id).single().execute()
+    except Exception:
         raise HTTPException(status_code=404, detail="Generation job not found")
 
-    if job["status"] == "ready":
-        # Return result and clean up memory
-        result = dict(job)
-        generation_jobs.pop(job_id, None)
-        return result
+    if not resp.data:
+        raise HTTPException(status_code=404, detail="Generation job not found")
 
-    return job
+    row = resp.data
+    output_type = row.get('output_type', '')
+
+    if output_type == 'generating':
+        return {"status": "processing"}
+
+    if output_type == 'error':
+        return {"status": "error", "error": row.get('description') or 'Generation failed'}
+
+    return {
+        "status": "ready",
+        "output": {
+            "id": row['id'],
+            "name": row['name'],
+            "type": output_type,
+            "url": row.get('file_url', ''),
+            "dateCreated": row.get('created_at', ''),
+        },
+    }
 
 
 @app.post("/api/artifacts/embed")

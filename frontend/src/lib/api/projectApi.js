@@ -400,14 +400,16 @@ export const projectApi = {
         throw error;
       }
 
-      return data.map(row => {
-        const transformed = transformDatabaseObject(row);
-        // Show date + time (not just date) for output documents
-        if (row.created_at) {
-          transformed.dateCreated = new Date(row.created_at).toLocaleString();
-        }
-        return transformed;
-      });
+      return data
+        .filter(row => row.output_type !== 'generating' && row.output_type !== 'error')
+        .map(row => {
+          const transformed = transformDatabaseObject(row);
+          // Show date + time (not just date) for output documents
+          if (row.created_at) {
+            transformed.dateCreated = new Date(row.created_at).toLocaleString();
+          }
+          return transformed;
+        });
     } catch (error) {
       handleApiError(error, 'get project outputs');
     }
