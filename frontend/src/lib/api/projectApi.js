@@ -381,6 +381,7 @@ export const projectApi = {
       if (data.created_at) {
         transformed.dateCreated = new Date(data.created_at).toLocaleString();
       }
+      transformed.url = transformed.fileUrl;
       return transformed;
     } catch (error) {
       handleApiError(error, 'add project output');
@@ -408,6 +409,8 @@ export const projectApi = {
           if (row.created_at) {
             transformed.dateCreated = new Date(row.created_at).toLocaleString();
           }
+          // OutputsSection uses output.url; transformDatabaseObject maps file_url → fileUrl
+          transformed.url = transformed.fileUrl;
           return transformed;
         });
     } catch (error) {

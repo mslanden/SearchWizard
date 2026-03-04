@@ -62,10 +62,10 @@ export default function HtmlDocumentViewer({ url, onClose }) {
         setLoading(true);
         console.log('🔄 [HtmlViewer] Attempting to fetch document from:', url);
         
-        // Try to get a fresh signed URL first if this looks like an expired signed URL
+        // Always generate a fresh signed URL for Supabase storage URLs (handles both
+        // signed URLs with expiry and public URLs on private buckets)
         let fetchUrl = url;
-        if (url.includes('/storage/v1/object/sign/') && url.includes('?token=')) {
-          console.log('🔄 [HtmlViewer] Detected signed URL, generating fresh one...');
+        if (url.includes('/storage/v1/object/')) {
           fetchUrl = await getFreshSignedUrl(url);
         }
         
