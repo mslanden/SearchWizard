@@ -266,6 +266,7 @@ a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB 
 16. Populate knowledge base files with real SearchWizard.ai content
 17. Remove `WriterAgent` file (`backend/agents/writer_agent.py`) — no longer imported
 18. Centralise the Claude model string into `ANTHROPIC_MODEL` constant or env var
+19. **Continuation generation for long documents** — when `stop_reason == 'max_tokens'` is detected (Claude hit the 16,000-token ceiling mid-document), automatically make a follow-up Claude call seeding the conversation with the truncated HTML and asking it to continue from where it left off, appending the result. This allows arbitrarily long documents to be generated gracefully without manual intervention. Requires: detecting truncation in `call_claude`, extracting the last complete HTML element as the resume point, and looping until `stop_reason == 'end_turn'` or a max-iteration guard is hit.
 
 ### Open Bug Log (Staging — Feb 2026)
 
@@ -302,6 +303,9 @@ a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB 
 | 35 | Company artifact URL upload fails — "The string did not match the expected pattern" — page crashes to "Error Loading Project" | Open | Two toasts appear simultaneously: green "Company artifact uploaded successfully" (storage upload succeeded) and red "Failed to upload company artifact — The string did not match the expected pattern." The error is from Supabase and indicates a pattern/UUID constraint violation during the DB insert, not a storage failure. Distinct from Bug #30 (different error message; `sourceUrl` key fix is in place). Likely a field receiving a value in the wrong format (e.g. a UUID column receiving a URL string, or vice versa). Do not fix until investigated. |
 | 36 | BlueprintViewer popup closes on any click — user cannot switch tabs (Layout / Visual Style) or scroll | Open | Click handler on the modal backdrop captures all clicks including those on inner content. Do not fix until scoped. |
 | 37 | Clicking "Generate New" briefly flashes the old V2 popup before the V3 popup appears | Open | Both V2 and V3 popup components may be mounted simultaneously during the transition; V2 renders first before V3 state is ready. Do not fix until scoped. |
+| 38 | "Generate New Document" popup remains open after user clicks "Generate by Magic" — should close immediately and show only the floating generating card | Open | After initiating generation, the modal backdrop and full popup remain visible instead of transitioning to the non-blocking floating spinner. `isGenerating` transitions to the floating card state, but the modal is not dismissed. Do not fix until scoped. |
+| 39 | Floating generating card shows "(Dismiss to cancel)" but dismissing only stops frontend polling — the server-side job continues and the document will still be saved. Replace text with "(Keep open for live updates)". | Open | Label is misleading. Change not yet applied. |
+| 40 | Outputs table Type column shows the internal type ID (e.g. "role_specification") instead of the user-friendly label (e.g. "Role Specification"). | Open | The backend stores the raw `document_type` slug from the template into `project_outputs.output_type`; the status endpoint returns it as-is. Frontend needs to resolve the label from `artifact_types` (category='golden'), or the backend should resolve it before storing/returning. |
 
 ---
 

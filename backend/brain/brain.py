@@ -110,6 +110,18 @@ async def call_claude(anthropic_client, prompt: str, max_tokens: int = 8000) -> 
             max_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}],
         )
+        stop_reason = response.stop_reason
+        output_tokens = response.usage.output_tokens if response.usage else None
+        if stop_reason == 'max_tokens':
+            print(
+                f"⚠️  [call_claude] Generation hit max_tokens limit "
+                f"({output_tokens}/{max_tokens} tokens). Document may be truncated."
+            )
+        else:
+            print(
+                f"✅ [call_claude] Generation complete. "
+                f"stop_reason={stop_reason}, output_tokens={output_tokens}/{max_tokens}"
+            )
         return response.content[0].text
 
     loop = asyncio.get_event_loop()

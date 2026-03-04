@@ -67,7 +67,7 @@ MAX_CANDIDATES             = 5       # candidates included in generation prompt
 MAX_INTERVIEWERS           = 3       # interviewers included in generation prompt
 VISION_MAX_TOKENS          = 2000    # max_tokens for PDF visual analysis call
 TEMPLATE_MAX_TOKENS        = 3000    # max_tokens for template prompt creation call
-GENERATION_MAX_TOKENS      = 8000    # max_tokens for final document generation call
+GENERATION_MAX_TOKENS      = 16000   # max_tokens for final document generation call
 PDF_VISION_PAGES           = 2       # number of PDF pages sent to Claude Vision
 
 # Blueprint pipeline token limits
