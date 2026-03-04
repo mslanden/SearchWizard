@@ -1,13 +1,14 @@
 
-export default function OutputsSection({ 
-  outputs, 
-  selectedOutputs, 
-  onToggleSelection, 
-  onView, 
-  onDelete, 
+export default function OutputsSection({
+  outputs,
+  selectedOutputs,
+  onToggleSelection,
+  onView,
+  onDelete,
+  onRename,
   deletingDocument,
   onGoldenExamples,
-  onGenerateDocument 
+  onGenerateDocument
 }) {
   return (
     <div className="bg-[#FFF5E6] rounded-lg p-6">
@@ -62,13 +63,19 @@ export default function OutputsSection({
                 <td className="px-3 py-4 text-sm text-gray-700">{output.dateCreated}</td>
                 <td className="px-3 py-4 text-right text-sm font-medium">
                   <div className="flex space-x-3 justify-end">
-                    <button 
+                    <button
                       onClick={() => onView(output.url)}
                       className="text-indigo-600 hover:text-indigo-900"
                     >
                       View
                     </button>
-                    <button 
+                    <button
+                      onClick={() => onRename(output)}
+                      className="text-gray-600 hover:text-gray-900"
+                    >
+                      Rename
+                    </button>
+                    <button
                       onClick={() => onDelete(output.id, output.name)}
                       className="text-red-600 hover:text-red-900"
                       disabled={deletingDocument}

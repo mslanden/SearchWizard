@@ -340,9 +340,9 @@ export const projectApi = {
   async addProjectOutput(projectId, outputData, file) {
     try {
       const user = await getCurrentUser();
-      
+
       validateRequiredFields(outputData, ['name']);
-      
+
       if (!file) {
         throw new Error('File is required');
       }
@@ -376,7 +376,12 @@ export const projectApi = {
         throw error;
       }
 
-      return transformDatabaseObject(data);
+      const transformed = transformDatabaseObject(data);
+      // Show date + time (not just date) for output documents
+      if (data.created_at) {
+        transformed.dateCreated = new Date(data.created_at).toLocaleString();
+      }
+      return transformed;
     } catch (error) {
       handleApiError(error, 'add project output');
     }
@@ -395,9 +400,36 @@ export const projectApi = {
         throw error;
       }
 
-      return data.map(transformDatabaseObject);
+      return data.map(row => {
+        const transformed = transformDatabaseObject(row);
+        // Show date + time (not just date) for output documents
+        if (row.created_at) {
+          transformed.dateCreated = new Date(row.created_at).toLocaleString();
+        }
+        return transformed;
+      });
     } catch (error) {
       handleApiError(error, 'get project outputs');
+    }
+  },
+
+  // Update project output fields (e.g. rename)
+  async updateProjectOutput(outputId, fields) {
+    try {
+      const { data, error } = await supabase
+        .from('project_outputs')
+        .update(fields)
+        .eq('id', outputId)
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      return transformDatabaseObject(data);
+    } catch (error) {
+      handleApiError(error, 'update project output');
     }
   },
 

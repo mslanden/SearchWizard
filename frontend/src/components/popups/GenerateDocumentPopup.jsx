@@ -4,8 +4,8 @@ import { XMarkIcon, SparklesIcon, EyeIcon } from '@heroicons/react/24/outline';
 import useDocumentGenerationV3 from '../../hooks/useDocumentGenerationV3';
 import PromptPreviewModal from '../PromptPreviewModal';
 
-/** @param {{ onClose: () => void, projectId?: string | null }} props */
-export default function GenerateDocumentPopup({ onClose, projectId = null }) {
+/** @param {{ onClose: () => void, projectId?: string | null, onOutputGenerated?: (output: object) => void }} props */
+export default function GenerateDocumentPopup({ onClose, projectId = null, onOutputGenerated }) {
   const popupRef = useRef(null);
   const {
     templates,
@@ -19,35 +19,68 @@ export default function GenerateDocumentPopup({ onClose, projectId = null }) {
     setSelectedInterviewerId,
     userComment,
     setUserComment,
+    documentName,
+    setDocumentName,
     loading,
+    isGenerating,
     error,
     previewData,
     setPreviewData,
     handleGenerateMagic,
     handlePreviewPrompt,
     handleGenerateFromPreview,
-  } = useDocumentGenerationV3(projectId);
+  } = useDocumentGenerationV3(projectId, { onOutputGenerated });
 
   const onGenerateMagic = async () => {
-    const success = await handleGenerateMagic();
-    if (success) {
-      onClose();
-    }
+    await handleGenerateMagic();
+    // Popup stays open in isGenerating state — does NOT auto-close
   };
 
   const onPreviewPrompt = async () => {
     await handlePreviewPrompt();
-    // previewData is set by the hook — PromptPreviewModal renders when previewData != null
   };
 
   const onGenerateFromPreview = async () => {
-    const success = await handleGenerateFromPreview();
-    if (success) {
-      onClose();
-    }
+    await handleGenerateFromPreview();
+    // Popup stays open in isGenerating state
   };
 
   const noTemplates = templates.length === 0 && !loading;
+
+  // ─── Generating state: floating non-blocking card ─────────────────────────
+
+  if (isGenerating) {
+    return (
+      <div className="fixed bottom-6 right-6 z-50 bg-white rounded-xl shadow-2xl border border-purple-200 p-5 w-80">
+        <div className="flex items-start gap-3">
+          <div className="flex-shrink-0 mt-0.5">
+            <div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-gray-900 truncate">
+              Generating &ldquo;{documentName}&rdquo;&hellip;
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              You can continue working below.
+            </p>
+            {error && (
+              <p className="text-xs text-red-600 mt-1">{error}</p>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="flex-shrink-0 p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+            title="Dismiss (cancels saving result)"
+          >
+            <XMarkIcon className="w-4 h-4" />
+          </button>
+        </div>
+        <p className="text-xs text-gray-400 mt-2 pl-9">(Dismiss to cancel)</p>
+      </div>
+    );
+  }
+
+  // ─── Normal modal state ───────────────────────────────────────────────────
 
   return (
     <>
@@ -85,6 +118,21 @@ export default function GenerateDocumentPopup({ onClose, projectId = null }) {
             )}
 
             <div className="space-y-6">
+              {/* Document Name */}
+              <div className="flex items-center justify-between">
+                <label className="text-xl text-gray-700 font-medium">Document Name:</label>
+                <div className="w-1/2">
+                  <input
+                    type="text"
+                    value={documentName}
+                    onChange={e => setDocumentName(e.target.value)}
+                    disabled={loading}
+                    placeholder="(New Document)"
+                    className="block w-full bg-white border border-gray-300 text-gray-700 py-3 px-4 rounded-lg focus:outline-none focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                </div>
+              </div>
+
               {/* Template selector */}
               <div className="flex items-center justify-between">
                 <label className="text-xl text-gray-700 font-medium">Select Template:</label>
@@ -190,7 +238,7 @@ export default function GenerateDocumentPopup({ onClose, projectId = null }) {
                   style={{ backgroundColor: loading ? '#9CA3AF' : '#8B5CF6' }}
                 >
                   <SparklesIcon className="w-5 h-5" />
-                  {loading ? 'Generating...' : 'Generate by Magic'}
+                  {loading ? 'Starting...' : 'Generate by Magic'}
                 </button>
               </div>
             </div>

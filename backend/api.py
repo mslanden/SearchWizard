@@ -74,6 +74,10 @@ BLUEPRINT_SEMANTIC_MAX_TOKENS = 4000
 BLUEPRINT_VISUAL_MAX_TOKENS   = 3000
 BLUEPRINT_LAYOUT_MAX_TOKENS   = 2000
 
+# In-memory store for async document generation jobs
+# job_id → { status: 'processing'|'ready'|'error', html_content?, document_type?, selected_artifacts?, error? }
+generation_jobs: dict = {}
+
 # Initialize FastAPI app
 app = FastAPI(title="Search Wizard API", 
               description="API for document generation and other backend functionality",
@@ -705,29 +709,24 @@ Generate a complete, professional document that follows the template structure a
         print(f"Document generation error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error generating document: {str(e)}")
 
-@app.post("/api/generate-document/v3")
-async def generate_document_v3_endpoint(
-    template_id:      str           = Body(...),
-    project_id:       str           = Body(...),
-    user_id:          str           = Body(...),
-    user_requirements: str          = Body(default=""),
-    candidate_id:     Optional[str] = Body(default=None),
-    interviewer_id:   Optional[str] = Body(default=None),
-    preview_only:     bool          = Body(default=False),
-):
+async def _run_generation_job(
+    job_id: str,
+    supabase_url: str,
+    supabase_key: str,
+    anthropic_api_key: str,
+    project_id: str,
+    template_id: str,
+    candidate_id: Optional[str],
+    interviewer_id: Optional[str],
+    user_requirements: str,
+) -> None:
     """
-    V3 document generation using Project Brain semantic artifact selection.
-
-    The Brain reads the template's V3 blueprint, scores all project artifacts against
-    the blueprint's section intents using OpenAI embeddings (keyword fallback when
-    embeddings are absent), and composes a structured generation prompt.
-
-    If preview_only=True: returns assembled prompt + selected_artifacts without
-    calling Claude (used by the "Preview Prompt" feature in the frontend).
+    Background task: run the full V3 generation pipeline and store the result in
+    the in-memory generation_jobs dict.  Called by create_generation_job.
     """
     try:
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-        anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        supabase = create_client(supabase_url, supabase_key)
+        anthropic_client = anthropic.Anthropic(api_key=anthropic_api_key)
 
         context = await build_brain_context(
             supabase=supabase,
@@ -738,19 +737,13 @@ async def generate_document_v3_endpoint(
             user_requirements=user_requirements,
         )
 
-        if preview_only:
-            return {
-                "prompt": context["prompt"],
-                "selected_artifacts": context["selected_artifacts"],
-            }
-
         html_content = await call_claude(
             anthropic_client=anthropic_client,
             prompt=context["prompt"],
             max_tokens=GENERATION_MAX_TOKENS,
         )
 
-        # Increment template usage count
+        # Increment template usage count (non-critical)
         try:
             template_resp = supabase.table('golden_examples').select(
                 'usage_count'
@@ -760,19 +753,106 @@ async def generate_document_v3_endpoint(
                 {'usage_count': current_count + 1}
             ).eq('id', template_id).execute()
         except Exception:
-            pass  # Non-critical
+            pass
 
-        return {
-            "success": True,
+        generation_jobs[job_id] = {
+            "status": "ready",
             "html_content": html_content,
-            "selected_artifacts": context["selected_artifacts"],
             "document_type": context.get("document_type", ""),
-            "timestamp": datetime.datetime.now().isoformat(),
+            "selected_artifacts": context["selected_artifacts"],
         }
+
+    except Exception as e:
+        print(f"V3 generation job {job_id} failed: {str(e)}")
+        generation_jobs[job_id] = {
+            "status": "error",
+            "error": str(e)[:500],
+        }
+
+
+@app.post("/api/generate-document/v3", status_code=202)
+async def generate_document_v3_endpoint(
+    background_tasks: BackgroundTasks,
+    template_id:      str           = Body(...),
+    project_id:       str           = Body(...),
+    user_id:          str           = Body(...),
+    user_requirements: str          = Body(default=""),
+    candidate_id:     Optional[str] = Body(default=None),
+    interviewer_id:   Optional[str] = Body(default=None),
+    preview_only:     bool          = Body(default=False),
+    document_name:    str           = Body(default="(New Document)"),
+):
+    """
+    V3 document generation using Project Brain semantic artifact selection.
+
+    preview_only=True: returns assembled prompt + selected_artifacts synchronously
+    (no Claude call) — used by the "Preview Prompt" feature.
+
+    preview_only=False: returns HTTP 202 with a job_id immediately and runs
+    generation in the background.  Poll GET /api/generate-document/{job_id}/status
+    every 4 seconds for completion.
+    """
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+        if preview_only:
+            context = await build_brain_context(
+                supabase=supabase,
+                project_id=project_id,
+                template_id=template_id,
+                candidate_id=candidate_id,
+                interviewer_id=interviewer_id,
+                user_requirements=user_requirements,
+            )
+            return {
+                "prompt": context["prompt"],
+                "selected_artifacts": context["selected_artifacts"],
+            }
+
+        # Async path: submit background job and return 202 immediately
+        job_id = str(uuid.uuid4())
+        generation_jobs[job_id] = {"status": "processing"}
+
+        background_tasks.add_task(
+            _run_generation_job,
+            job_id,
+            SUPABASE_URL,
+            SUPABASE_KEY,
+            ANTHROPIC_API_KEY,
+            project_id,
+            template_id,
+            candidate_id,
+            interviewer_id,
+            user_requirements,
+        )
+
+        return {"job_id": job_id, "status": "processing"}
 
     except Exception as e:
         print(f"V3 document generation error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error generating document: {str(e)}")
+
+
+@app.get("/api/generate-document/{job_id}/status")
+async def get_generation_job_status(job_id: str):
+    """
+    Poll the status of an async document generation job.
+
+    Returns status='processing' while the job is running, status='ready' when
+    html_content is available, or status='error' on failure.  The job is removed
+    from memory after the first successful 'ready' response.
+    """
+    job = generation_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Generation job not found")
+
+    if job["status"] == "ready":
+        # Return result and clean up memory
+        result = dict(job)
+        generation_jobs.pop(job_id, None)
+        return result
+
+    return job
 
 
 @app.post("/api/artifacts/embed")

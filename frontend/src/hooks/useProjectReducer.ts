@@ -1,5 +1,5 @@
 import { useReducer, useCallback } from 'react';
-import { Project, ProjectState, ProjectAction, Artifact, Candidate, Interviewer } from '../types/project';
+import { Project, ProjectState, ProjectAction, Artifact, Candidate, Interviewer, ProjectOutput } from '../types/project';
 
 const initialState: ProjectState = {
   project: null,
@@ -159,6 +159,28 @@ const projectReducer = (state: ProjectState, action: ProjectAction): ProjectStat
         }
       };
 
+    case 'ADD_OUTPUT':
+      if (!state.project) return state;
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          outputs: [action.payload, ...state.project.outputs]
+        }
+      };
+
+    case 'UPDATE_OUTPUT':
+      if (!state.project) return state;
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          outputs: state.project.outputs.map(o =>
+            o.id === action.payload.id ? { ...o, ...action.payload } : o
+          )
+        }
+      };
+
     case 'DELETE_OUTPUT':
       if (!state.project) return state;
       return {
@@ -233,6 +255,12 @@ export const useProjectReducer = () => {
 
     decrementInterviewerArtifactCount: useCallback((id: string) =>
       dispatch({ type: 'DECREMENT_INTERVIEWER_ARTIFACT_COUNT', payload: id }), []),
+
+    addOutput: useCallback((output: ProjectOutput) =>
+      dispatch({ type: 'ADD_OUTPUT', payload: output }), []),
+
+    updateOutput: useCallback((output: Partial<ProjectOutput> & { id: string }) =>
+      dispatch({ type: 'UPDATE_OUTPUT', payload: output }), []),
 
     deleteOutput: useCallback((outputId: string) =>
       dispatch({ type: 'DELETE_OUTPUT', payload: outputId }), []),

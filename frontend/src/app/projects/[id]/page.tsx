@@ -14,7 +14,7 @@ import PeopleSection from '../../../components/project/sections/PeopleSection';
 import OutputsSection from '../../../components/project/sections/OutputsSection';
 
 // Import types and utilities
-import { Artifact, ArtifactUploadData, Candidate, CandidateFormData, Interviewer, InterviewerFormData, ProjectHeaderData } from '../../../types/project';
+import { Artifact, ArtifactUploadData, Candidate, CandidateFormData, Interviewer, InterviewerFormData, ProjectHeaderData, ProjectOutput } from '../../../types/project';
 import { useProjectReducer } from '../../../hooks/useProjectReducer';
 import { useErrorHandler } from '../../../hooks/useErrorHandler';
 import { fetchProjectData, createEmptyProject, getArtifactsByCategory } from '../../../utils/projectUtils';
@@ -40,6 +40,8 @@ export default function ProjectDetail({ params }: PageProps) {
   const [isGenerateDocumentOpen, setIsGenerateDocumentOpen] = useState(false);
   const [isProjectHeaderEditOpen, setIsProjectHeaderEditOpen] = useState(false);
   const [artifactUploadType, setArtifactUploadType] = useState<'company' | 'role' | null>(null);
+  const [isRenameOutputOpen, setIsRenameOutputOpen] = useState(false);
+  const [currentOutput, setCurrentOutput] = useState<ProjectOutput | null>(null);
 
   // Memoized values for performance
   const companyArtifacts = useMemo(() => 
@@ -236,6 +238,25 @@ export default function ProjectDetail({ params }: PageProps) {
     } finally {
       actions.setDeletingDocument(false);
     }
+  };
+
+  // Handle document generated (async job completed)
+  const handleOutputGenerated = (output: ProjectOutput) => {
+    actions.addOutput(output);
+    showSuccess(`Document "${output.name}" generated successfully`);
+  };
+
+  // Handle rename output
+  const handleRenameOutput = (output: ProjectOutput) => {
+    setCurrentOutput(output);
+    setIsRenameOutputOpen(true);
+  };
+
+  const handleSaveRename = async (outputId: string, newName: string) => {
+    await (artifactApi as any).updateProjectOutput(outputId, { name: newName });
+    actions.updateOutput({ id: outputId, name: newName });
+    showSuccess(`Document renamed to "${newName}"`);
+    setIsRenameOutputOpen(false);
   };
 
   // Handle artifact deletion
@@ -491,6 +512,7 @@ export default function ProjectDetail({ params }: PageProps) {
           onToggleSelection={toggleOutputSelection}
           onView={setViewingDocument}
           onDelete={handleDeleteDocument}
+          onRename={handleRenameOutput}
           deletingDocument={state.deletingDocument}
           onGoldenExamples={openGoldenExamples}
           onGenerateDocument={openGenerateDocument}
@@ -520,6 +542,11 @@ export default function ProjectDetail({ params }: PageProps) {
         onAddInterviewer={handleAddInterviewer}
         onCloseGoldenExamples={closeGoldenExamples}
         onCloseGenerateDocument={closeGenerateDocument}
+        onOutputGenerated={handleOutputGenerated}
+        isRenameOutputOpen={isRenameOutputOpen}
+        currentOutput={currentOutput}
+        onCloseRenameOutput={() => setIsRenameOutputOpen(false)}
+        onSaveRename={handleSaveRename}
         onCloseProjectHeaderEdit={closeProjectHeaderEdit}
         onSaveProjectHeader={saveProjectHeaderEdit}
         onCloseArtifactUpload={closeArtifactUpload}

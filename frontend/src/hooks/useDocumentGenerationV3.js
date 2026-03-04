@@ -4,15 +4,19 @@
  * Replaces useDocumentGeneration.js. Key differences:
  *  - Only shows golden examples with a V3 blueprint (blueprint != null, status='ready')
  *  - Supports optional candidate and interviewer targeting
- *  - Calls POST /api/generate-document/v3 (Project Brain endpoint)
- *  - preview_only mode: returns assembled prompt without calling Claude
+ *  - Calls POST /api/generate-document/v3 (Project Brain endpoint) — returns 202 + job_id
+ *  - Polls GET /api/generate-document/{job_id}/status every 4s until ready
+ *  - preview_only mode: returns assembled prompt without calling Claude (still synchronous)
+ *  - Accepts onOutputGenerated callback — called with the saved ProjectOutput on completion
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { artifactApi } from '../lib/api';
 
 const DEFAULT_BACKEND_URL = 'https://searchwizard-production.up.railway.app';
+const POLL_INTERVAL_MS = 4000;
+const POLL_MAX_ATTEMPTS = 75; // ~5 minutes
 
 function getBackendUrl() {
   let url = process.env.NEXT_PUBLIC_BACKEND_URL || DEFAULT_BACKEND_URL;
@@ -22,7 +26,7 @@ function getBackendUrl() {
   return url;
 }
 
-export default function useDocumentGenerationV3(projectId) {
+export default function useDocumentGenerationV3(projectId, { onOutputGenerated } = {}) {
   const { user } = useAuth();
 
   // Template selection (V3 only — blueprint must be present)
@@ -36,13 +40,16 @@ export default function useDocumentGenerationV3(projectId) {
   const [selectedInterviewerId, setSelectedInterviewerId] = useState('');
 
   const [userComment, setUserComment] = useState('');
+  const [documentName, setDocumentName] = useState('(New Document)');
   const [loading, setLoading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false); // true while background job is polling
   const [error, setError] = useState(null);
 
   // Prompt preview data (set when preview_only=true is called)
   const [previewData, setPreviewData] = useState(null);
 
   const [localProjectId, setLocalProjectId] = useState(projectId);
+  const pollIntervalRef = useRef(null);
 
   useEffect(() => {
     if (projectId) setLocalProjectId(projectId);
@@ -59,6 +66,15 @@ export default function useDocumentGenerationV3(projectId) {
       fetchProjectPeople(localProjectId);
     }
   }, [localProjectId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clean up polling interval on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, []);
 
   // ─── Template Fetching ───────────────────────────────────────────────────
 
@@ -119,6 +135,7 @@ export default function useDocumentGenerationV3(projectId) {
       candidate_id: selectedCandidateId || null,
       interviewer_id: selectedInterviewerId || null,
       preview_only: previewOnly,
+      document_name: documentName,
     };
 
     const response = await fetch(`${getBackendUrl()}/api/generate-document/v3`, {
@@ -141,34 +158,83 @@ export default function useDocumentGenerationV3(projectId) {
 
   // ─── Save HTML to Supabase ────────────────────────────────────────────────
 
-  const saveHtmlToSupabase = async (htmlContent) => {
-    const templateName = selectedTemplate?.name || 'Document';
+  const saveHtmlToSupabase = async (htmlContent, documentType) => {
+    const safeName = (documentName || '(New Document)').replace(/\s+/g, '_');
     const htmlBlob = new Blob([htmlContent], { type: 'text/html' });
     const file = new File(
       [htmlBlob],
-      `${templateName.replace(/\s+/g, '_')}_${Date.now()}.html`,
+      `${safeName}_${Date.now()}.html`,
       { type: 'text/html' }
     );
 
     const outputData = {
-      name: `${templateName} Document`,
+      name: documentName || '(New Document)',
       description: `Generated via Project Brain V3`,
-      output_type: 'html_document',
+      output_type: documentType || selectedTemplate?.document_type || 'Document',
     };
 
     return artifactApi.addProjectOutput(localProjectId, outputData, file);
   };
 
+  // ─── Polling ──────────────────────────────────────────────────────────────
+
+  const startPolling = (jobId) => {
+    let attempts = 0;
+    setIsGenerating(true);
+
+    pollIntervalRef.current = setInterval(async () => {
+      attempts++;
+
+      if (attempts > POLL_MAX_ATTEMPTS) {
+        clearInterval(pollIntervalRef.current);
+        setIsGenerating(false);
+        setError('Generation timed out. Please try again.');
+        return;
+      }
+
+      try {
+        const res = await fetch(
+          `${getBackendUrl()}/api/generate-document/${jobId}/status`
+        );
+        if (!res.ok) return; // silent skip — continue polling
+
+        const data = await res.json();
+
+        if (data.status === 'ready') {
+          clearInterval(pollIntervalRef.current);
+          try {
+            const savedOutput = await saveHtmlToSupabase(data.html_content, data.document_type);
+            if (savedOutput && onOutputGenerated) {
+              onOutputGenerated(savedOutput);
+            }
+          } catch (saveErr) {
+            setError(`Document generated but failed to save: ${saveErr.message}`);
+          }
+          setIsGenerating(false);
+        } else if (data.status === 'error') {
+          clearInterval(pollIntervalRef.current);
+          setError(data.error || 'An error occurred during generation');
+          setIsGenerating(false);
+        }
+        // status='processing' → continue polling
+      } catch (err) {
+        console.error('Poll error:', err);
+        // Network hiccup — continue polling silently
+      }
+    }, POLL_INTERVAL_MS);
+  };
+
   // ─── Public Actions ───────────────────────────────────────────────────────
 
-  /** Generate document directly without showing prompt preview. */
+  /** Submit generation job; popup transitions to non-blocking Generating state. */
   const handleGenerateMagic = async () => {
     try {
       setLoading(true);
       setError(null);
       const result = await callGenerateV3(false);
-      await saveHtmlToSupabase(result.html_content);
       setLoading(false);
+      // result contains { job_id, status:'processing' }
+      startPolling(result.job_id);
       return true;
     } catch (err) {
       setError(err.message || 'An error occurred during generation');
@@ -202,9 +268,9 @@ export default function useDocumentGenerationV3(projectId) {
       setLoading(true);
       setError(null);
       const result = await callGenerateV3(false);
-      await saveHtmlToSupabase(result.html_content);
       setPreviewData(null);
       setLoading(false);
+      startPolling(result.job_id);
       return true;
     } catch (err) {
       setError(err.message || 'An error occurred during generation');
@@ -229,8 +295,11 @@ export default function useDocumentGenerationV3(projectId) {
     // User input
     userComment,
     setUserComment,
+    documentName,
+    setDocumentName,
     // State
     loading,
+    isGenerating,
     error,
     // Preview
     previewData,

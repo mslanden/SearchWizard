@@ -4,6 +4,7 @@ import InterviewerAddPopup from '../popups/InterviewerAddPopup';
 import InterviewerEditPopup from '../popups/InterviewerEditPopup';
 import GoldenExamplesPopup from '../popups/GoldenExamplesPopup';
 import GenerateDocumentPopup from '../popups/GenerateDocumentPopup';
+import RenameOutputPopup from '../popups/RenameOutputPopup';
 import ProjectHeaderEditPopup from '../popups/ProjectHeaderEditPopup';
 import UnifiedArtifactUploadPopup from '../popups/UnifiedArtifactUploadPopup';
 import HtmlDocumentViewer from '../common/HtmlDocumentViewer';
@@ -15,6 +16,7 @@ import {
   InterviewerFormData,
   Project,
   ProjectHeaderData,
+  ProjectOutput,
 } from '../../types/project';
 
 interface ProjectPopupsProps {
@@ -40,6 +42,11 @@ interface ProjectPopupsProps {
   onAddInterviewer: (data: InterviewerFormData) => Promise<void>;
   onCloseGoldenExamples: () => void;
   onCloseGenerateDocument: () => void;
+  onOutputGenerated: (output: ProjectOutput) => void;
+  isRenameOutputOpen: boolean;
+  currentOutput: ProjectOutput | null;
+  onCloseRenameOutput: () => void;
+  onSaveRename: (id: string, name: string) => Promise<void>;
   onCloseProjectHeaderEdit: () => void;
   onSaveProjectHeader: (data: ProjectHeaderData) => Promise<void>;
   onCloseArtifactUpload: () => void;
@@ -74,6 +81,11 @@ export default function ProjectPopups({
   onAddInterviewer,
   onCloseGoldenExamples,
   onCloseGenerateDocument,
+  onOutputGenerated,
+  isRenameOutputOpen,
+  currentOutput,
+  onCloseRenameOutput,
+  onSaveRename,
   onCloseProjectHeaderEdit,
   onSaveProjectHeader,
   onCloseArtifactUpload,
@@ -135,6 +147,16 @@ export default function ProjectPopups({
         <GenerateDocumentPopup
           onClose={onCloseGenerateDocument}
           projectId={project.id}
+          onOutputGenerated={onOutputGenerated}
+        />
+      )}
+
+      {/* Rename Output Popup */}
+      {isRenameOutputOpen && currentOutput && (
+        <RenameOutputPopup
+          output={currentOutput}
+          onClose={onCloseRenameOutput}
+          onSave={onSaveRename}
         />
       )}
 
