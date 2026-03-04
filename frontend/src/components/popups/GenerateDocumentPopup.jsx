@@ -4,7 +4,7 @@ import { XMarkIcon, SparklesIcon, EyeIcon } from '@heroicons/react/24/outline';
 import useDocumentGenerationV3 from '../../hooks/useDocumentGenerationV3';
 import PromptPreviewModal from '../PromptPreviewModal';
 
-/** @param {{ onClose: () => void, projectId?: string | null, onOutputGenerated?: (output: object) => void }} props */
+/** @param {{ onClose: () => void, projectId?: string | null, onOutputGenerated?: function }} props */
 export default function GenerateDocumentPopup({ onClose, projectId = null, onOutputGenerated }) {
   const popupRef = useRef(null);
   const {
