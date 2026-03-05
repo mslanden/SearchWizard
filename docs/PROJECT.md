@@ -188,7 +188,7 @@ a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB 
 | Constraint | Detail |
 |-----------|--------|
 | Backend URL env var | Use `NEXT_PUBLIC_BACKEND_URL` for all frontend → backend calls. Fallback to `https://searchwizard-production.up.railway.app` remains in `analyze-file` and `analyze-structure` API routes (by design — these are Next.js server-side routes). |
-| `max_tokens` per endpoint | `backend/api.py` uses named constants: `VISION_MAX_TOKENS=2000`, `TEMPLATE_MAX_TOKENS=3000`, `GENERATION_MAX_TOKENS=8000`. If generation is observed to truncate, raise `GENERATION_MAX_TOKENS`. |
+| `max_tokens` per endpoint | `backend/api.py` uses named constants: `VISION_MAX_TOKENS=2000`, `TEMPLATE_MAX_TOKENS=3000`, `GENERATION_MAX_TOKENS=16000`. Raised from 8000 → 16000 (Mar 2026) after multi-section documents were confirmed to truncate. `call_claude` now logs `stop_reason` + `output_tokens` on every generation run. |
 | CSP per branch | `next.config.js` `connect-src` must include the backend URL for each environment. Staging branch includes staging Railway URL; main does not. |
 | Claude model | `claude-sonnet-4-6` (upgraded from deprecated `claude-3-5-sonnet-20241022` Feb 2026). Defined in `backend/agent_wrapper/anthropic.py` and 3 direct calls in `backend/api.py`. See ADR-007. |
 | Shared Supabase (staging + production) | Both environments currently share one Supabase project. See `docs/DECISIONS.md` — must be separated before public launch. |
