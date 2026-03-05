@@ -266,6 +266,7 @@ a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB 
 16. Populate knowledge base files with real SearchWizard.ai content
 17. Remove `WriterAgent` file (`backend/agents/writer_agent.py`) — no longer imported
 18. Centralise the Claude model string into `ANTHROPIC_MODEL` constant or env var
+20. **Display project description on main project page** — if a project has a Description, show it on the project detail page beneath the date created. Currently the Description field can be set via "Edit Project" but is not displayed anywhere in the UI.
 19. **Continuation generation for long documents** — when `stop_reason == 'max_tokens'` is detected (Claude hit the 16,000-token ceiling mid-document), automatically make a follow-up Claude call seeding the conversation with the truncated HTML and asking it to continue from where it left off, appending the result. This allows arbitrarily long documents to be generated gracefully without manual intervention. Requires: detecting truncation in `call_claude`, extracting the last complete HTML element as the resume point, and looping until `stop_reason == 'end_turn'` or a max-iteration guard is hit.
 
 ### Open Bug Log (Staging — Feb 2026)
