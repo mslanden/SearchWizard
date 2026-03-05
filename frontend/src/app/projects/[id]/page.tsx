@@ -260,21 +260,25 @@ export default function ProjectDetail({ params }: PageProps) {
   };
 
   const handleDownload = async (outputId: string, outputName: string): Promise<void> => {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://searchwizard-production.up.railway.app';
-    const response = await fetch(`${backendUrl}/api/outputs/${outputId}/download-docx`);
-    if (!response.ok) {
-      const detail = await response.text().catch(() => 'Unknown error');
-      throw new Error(`Download failed: ${detail}`);
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://searchwizard-production.up.railway.app';
+      const response = await fetch(`${backendUrl}/api/outputs/${outputId}/download-docx`);
+      if (!response.ok) {
+        const detail = await response.text().catch(() => 'Unknown error');
+        throw new Error(`Download failed (${response.status}): ${detail}`);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${outputName || 'document'}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      handleError(err as Error, 'download document');
     }
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${outputName || 'document'}.docx`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   // Handle artifact deletion

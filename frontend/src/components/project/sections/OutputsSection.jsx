@@ -1,4 +1,6 @@
 
+import { useState } from 'react';
+
 export default function OutputsSection({
   outputs,
   selectedOutputs,
@@ -11,6 +13,13 @@ export default function OutputsSection({
   onGoldenExamples,
   onGenerateDocument
 }) {
+  const [downloadingId, setDownloadingId] = useState(null);
+
+  const handleDownloadClick = (outputId, outputName) => {
+    setDownloadingId(outputId);
+    onDownload(outputId, outputName).finally(() => setDownloadingId(null));
+  };
+
   return (
     <div className="bg-[#FFF5E6] rounded-lg p-6">
       <div className="flex items-center justify-between mb-4">
@@ -71,10 +80,11 @@ export default function OutputsSection({
                       View
                     </button>
                     <button
-                      onClick={() => onDownload(output.id, output.name)}
-                      className="text-green-600 hover:text-green-900"
+                      onClick={() => handleDownloadClick(output.id, output.name)}
+                      disabled={downloadingId === output.id}
+                      className="text-green-600 hover:text-green-900 disabled:opacity-50"
                     >
-                      Download
+                      {downloadingId === output.id ? 'Downloading...' : 'Download'}
                     </button>
                     <button
                       onClick={() => onRename(output)}

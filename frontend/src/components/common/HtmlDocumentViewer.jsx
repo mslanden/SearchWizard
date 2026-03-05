@@ -124,7 +124,7 @@ export default function HtmlDocumentViewer({ url, outputId, outputName, onDownlo
               <button
                 onClick={() => {
                   setDownloading(true);
-                  onDownload(outputId, outputName || 'document').finally(() => setDownloading(false));
+                  onDownload(outputId, outputName || 'document').finally(() => setDownloading(false)).catch(() => {});
                 }}
                 disabled={downloading}
                 className="flex items-center space-x-1 px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
