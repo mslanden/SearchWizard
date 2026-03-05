@@ -529,7 +529,7 @@ export default function ProjectDetail({ params }: PageProps) {
           selectedOutputs={state.selectedOutputs}
           onToggleSelection={toggleOutputSelection}
           onView={(url: string) => {
-            const output = state.project.outputs.find(o => o.url === url);
+            const output = state.project?.outputs.find(o => o.url === url);
             setViewingDocument({ url, id: output?.id ?? '', name: output?.name ?? '' });
           }}
           onDownload={handleDownload}
