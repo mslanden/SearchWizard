@@ -30,7 +30,8 @@ interface ProjectPopupsProps {
   isGenerateDocumentOpen: boolean;
   isProjectHeaderEditOpen: boolean;
   artifactUploadType: 'company' | 'role' | null;
-  viewingDocument: string | null;
+  viewingDocument: { url: string; id: string; name: string } | null;
+  onDownload: (outputId: string, outputName: string) => Promise<void>;
   onCloseAddCandidate: () => void;
   onAddCandidate: (data: CandidateFormData) => Promise<void>;
   onCloseCandidateEdit: () => void;
@@ -51,7 +52,7 @@ interface ProjectPopupsProps {
   onSaveProjectHeader: (data: ProjectHeaderData) => Promise<void>;
   onCloseArtifactUpload: () => void;
   onArtifactUpload: (data: ArtifactUploadData) => Promise<void>;
-  onSetViewingDocument: (url: string | null) => void;
+  onSetViewingDocument: (doc: { url: string; id: string; name: string } | null) => void;
   onCandidateArtifactAdded?: (candidateId: string) => void;
   onCandidateArtifactDeleted?: (candidateId: string) => void;
   onInterviewerArtifactAdded?: (interviewerId: string) => void;
@@ -91,6 +92,7 @@ export default function ProjectPopups({
   onCloseArtifactUpload,
   onArtifactUpload,
   onSetViewingDocument,
+  onDownload,
   onCandidateArtifactAdded,
   onCandidateArtifactDeleted,
   onInterviewerArtifactAdded,
@@ -182,7 +184,10 @@ export default function ProjectPopups({
       {/* HTML Document Viewer */}
       {viewingDocument && (
         <HtmlDocumentViewer
-          url={viewingDocument}
+          url={viewingDocument.url}
+          outputId={viewingDocument.id}
+          outputName={viewingDocument.name}
+          onDownload={onDownload}
           onClose={() => onSetViewingDocument(null)}
         />
       )}

@@ -13,11 +13,14 @@ import datetime
 import requests
 import base64
 import io
+import tempfile
 import anthropic
+import pypandoc
 from typing import Optional, Dict, List, Any
 import uuid
 import asyncio
 from fastapi import FastAPI, HTTPException, Body, File, UploadFile, Form, Query, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from pipeline.pipeline_runner import run_pipeline_and_store
 from brain.brain import build_brain_context, call_claude
 from brain.embedder import embed_and_store
@@ -908,6 +911,80 @@ async def get_generation_job_status(job_id: str):
             "dateCreated": row.get('created_at', ''),
         },
     }
+
+
+@app.get("/api/outputs/{output_id}/download-docx")
+async def download_output_as_docx(output_id: str):
+    """
+    Convert a stored HTML output document to DOCX and return it as a file download.
+
+    Fetches the HTML from Supabase Storage using the file_url stored in the
+    project_outputs row, converts it to DOCX via pandoc (pypandoc), and streams
+    the result back with a Content-Disposition: attachment header.
+    """
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+    # Fetch the output record
+    try:
+        resp = supabase.table('project_outputs').select(
+            'id, name, file_url, file_path'
+        ).eq('id', output_id).single().execute()
+    except Exception:
+        raise HTTPException(status_code=404, detail="Output not found")
+
+    if not resp.data:
+        raise HTTPException(status_code=404, detail="Output not found")
+
+    row = resp.data
+    file_path = row.get('file_path') or ''
+    file_url = row.get('file_url') or ''
+    document_name = row.get('name') or 'document'
+
+    # Generate a fresh signed URL from the stored path (signed URLs expire after 1 hour)
+    if file_path:
+        bucket_name = 'project-outputs'
+        sign_resp = supabase.storage.from_(bucket_name).create_signed_url(file_path, 3600)
+        fetch_url = sign_resp.get('signedURL') or sign_resp.get('signedUrl') or file_url
+    else:
+        fetch_url = file_url
+
+    # Fetch HTML content
+    try:
+        html_response = requests.get(fetch_url, timeout=30)
+        html_response.raise_for_status()
+        html_content = html_response.text
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch source document: {str(e)}")
+
+    # Convert HTML → DOCX via pandoc
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp:
+            tmp_path = tmp.name
+
+        pypandoc.convert_text(
+            html_content,
+            'docx',
+            format='html',
+            outputfile=tmp_path,
+            extra_args=['--standalone'],
+        )
+
+        with open(tmp_path, 'rb') as f:
+            docx_bytes = f.read()
+
+        os.unlink(tmp_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DOCX conversion failed: {str(e)}")
+
+    # Build a safe filename
+    safe_name = re.sub(r'[^a-zA-Z0-9_\- ]', '', document_name).strip() or 'document'
+    filename = f"{safe_name}.docx"
+
+    return StreamingResponse(
+        io.BytesIO(docx_bytes),
+        media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
 
 
 @app.post("/api/artifacts/embed")

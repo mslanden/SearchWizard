@@ -4,6 +4,7 @@ export default function OutputsSection({
   selectedOutputs,
   onToggleSelection,
   onView,
+  onDownload,
   onDelete,
   onRename,
   deletingDocument,
@@ -68,6 +69,12 @@ export default function OutputsSection({
                       className="text-indigo-600 hover:text-indigo-900"
                     >
                       View
+                    </button>
+                    <button
+                      onClick={() => onDownload(output.id, output.name)}
+                      className="text-green-600 hover:text-green-900"
+                    >
+                      Download
                     </button>
                     <button
                       onClick={() => onRename(output)}

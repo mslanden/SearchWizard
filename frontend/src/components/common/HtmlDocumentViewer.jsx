@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { XMarkIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import { supabase } from '../../lib/supabase';
 
-export default function HtmlDocumentViewer({ url, onClose }) {
+export default function HtmlDocumentViewer({ url, outputId, outputName, onDownload, onClose }) {
   const [htmlContent, setHtmlContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [downloading, setDownloading] = useState(false);
 
   // Function to extract file path from Supabase storage URL
   const extractFilePathFromUrl = (url) => {
@@ -118,12 +119,27 @@ export default function HtmlDocumentViewer({ url, onClose }) {
       <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl h-[90vh] flex flex-col">
         <div className="flex justify-between items-center p-4 border-b">
           <h2 className="text-xl font-semibold text-gray-800">Document Viewer</h2>
-          <button 
-            onClick={onClose}
-            className="p-1 rounded-full hover:bg-gray-100"
-          >
-            <XMarkIcon className="w-6 h-6 text-gray-700" />
-          </button>
+          <div className="flex items-center space-x-2">
+            {onDownload && outputId && (
+              <button
+                onClick={() => {
+                  setDownloading(true);
+                  onDownload(outputId, outputName || 'document').finally(() => setDownloading(false));
+                }}
+                disabled={downloading}
+                className="flex items-center space-x-1 px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+              >
+                <ArrowDownTrayIcon className="w-4 h-4" />
+                <span>{downloading ? 'Downloading...' : 'Download DOCX'}</span>
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1 rounded-full hover:bg-gray-100"
+            >
+              <XMarkIcon className="w-6 h-6 text-gray-700" />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-auto p-4">

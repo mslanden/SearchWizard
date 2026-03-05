@@ -261,7 +261,7 @@ a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB 
 11. Fix Bug #22 (Generate New Document dropdown lists file names instead of types)
 12. Fix Bug #35 (company artifact URL upload fails with pattern mismatch error)
 13. Editable prompt in `PromptPreviewModal` — allow user to override Brain-assembled prompt before generation
-14. **Download output documents** — add a Download button to the Outputs section / `HtmlDocumentViewer` so users can save generated documents locally (HTML or DOCX on-demand). Currently documents can only be viewed inline.
+14. ✅ **Download output documents** — "Download" button in Outputs table and "Download DOCX" button in HtmlDocumentViewer header. Backend `GET /api/outputs/{id}/download-docx` converts stored HTML to DOCX via pandoc (pypandoc). nixpacks.toml added to backend to install pandoc on Railway. (Mar 2026)
 15. Separate Supabase projects (staging vs production) — **required before public launch**
 16. Populate knowledge base files with real SearchWizard.ai content
 17. Remove `WriterAgent` file (`backend/agents/writer_agent.py`) — no longer imported

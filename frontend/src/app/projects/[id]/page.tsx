@@ -30,7 +30,7 @@ export default function ProjectDetail({ params }: PageProps) {
   const { error, handleError, clearError, showSuccess, hasError } = useErrorHandler();
   
   // UI state
-  const [viewingDocument, setViewingDocument] = useState<string | null>(null);
+  const [viewingDocument, setViewingDocument] = useState<{ url: string; id: string; name: string } | null>(null);
   const [isAddCandidateOpen, setIsAddCandidateOpen] = useState(false);
   const [isEditCandidateOpen, setIsEditCandidateOpen] = useState(false);
   const [currentCandidate, setCurrentCandidate] = useState<Candidate | null>(null);
@@ -257,6 +257,24 @@ export default function ProjectDetail({ params }: PageProps) {
     actions.updateOutput({ id: outputId, name: newName });
     showSuccess(`Document renamed to "${newName}"`);
     setIsRenameOutputOpen(false);
+  };
+
+  const handleDownload = async (outputId: string, outputName: string): Promise<void> => {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://searchwizard-production.up.railway.app';
+    const response = await fetch(`${backendUrl}/api/outputs/${outputId}/download-docx`);
+    if (!response.ok) {
+      const detail = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Download failed: ${detail}`);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${outputName || 'document'}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   // Handle artifact deletion
@@ -510,7 +528,11 @@ export default function ProjectDetail({ params }: PageProps) {
           outputs={state.project.outputs}
           selectedOutputs={state.selectedOutputs}
           onToggleSelection={toggleOutputSelection}
-          onView={setViewingDocument}
+          onView={(url: string) => {
+            const output = state.project.outputs.find(o => o.url === url);
+            setViewingDocument({ url, id: output?.id ?? '', name: output?.name ?? '' });
+          }}
+          onDownload={handleDownload}
           onDelete={handleDeleteDocument}
           onRename={handleRenameOutput}
           deletingDocument={state.deletingDocument}
@@ -552,6 +574,7 @@ export default function ProjectDetail({ params }: PageProps) {
         onCloseArtifactUpload={closeArtifactUpload}
         onArtifactUpload={handleArtifactUpload}
         onSetViewingDocument={setViewingDocument}
+        onDownload={handleDownload}
         onCandidateArtifactAdded={handleCandidateArtifactAdded}
         onCandidateArtifactDeleted={handleCandidateArtifactDeleted}
         onInterviewerArtifactAdded={handleInterviewerArtifactAdded}
