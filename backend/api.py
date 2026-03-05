@@ -948,13 +948,33 @@ async def download_output_as_docx(output_id: str):
     else:
         fetch_url = file_url
 
-    # Fetch HTML content
+    # Fetch HTML content (decode as UTF-8 explicitly to avoid mojibake)
     try:
         html_response = requests.get(fetch_url, timeout=30)
         html_response.raise_for_status()
-        html_content = html_response.text
+        html_content = html_response.content.decode('utf-8', errors='replace')
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Failed to fetch source document: {str(e)}")
+
+    # Ensure UTF-8 charset meta tag is present so pandoc interprets correctly
+    if '<meta charset' not in html_content and '<meta http-equiv' not in html_content:
+        html_content = html_content.replace('<head>', '<head><meta charset="utf-8">', 1)
+        if '<head>' not in html_content and '<html' in html_content:
+            html_content = html_content.replace('<html', '<html><head><meta charset="utf-8"></head><html', 1)
+
+    # Inline CSS from <style> blocks into element style= attributes so pandoc
+    # can apply formatting (colours, font weights, etc.) to the DOCX output.
+    try:
+        import premailer
+        html_content = premailer.transform(
+            html_content,
+            allow_network=False,
+            allow_loading_external_files=False,
+            preserve_inline_attachments=False,
+            remove_classes=False,
+        )
+    except Exception:
+        pass  # Fall through with original HTML if premailer fails
 
     # Convert HTML → DOCX via pandoc
     try:
@@ -966,7 +986,7 @@ async def download_output_as_docx(output_id: str):
             'docx',
             format='html',
             outputfile=tmp_path,
-            extra_args=['--standalone'],
+            extra_args=['--standalone', '--wrap=none'],
         )
 
         with open(tmp_path, 'rb') as f:
