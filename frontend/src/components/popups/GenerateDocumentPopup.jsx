@@ -70,12 +70,12 @@ export default function GenerateDocumentPopup({ onClose, projectId = null, onOut
           <button
             onClick={onClose}
             className="flex-shrink-0 p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
-            title="Dismiss (cancels saving result)"
+            title="Dismiss"
           >
             <XMarkIcon className="w-4 h-4" />
           </button>
         </div>
-        <p className="text-xs text-gray-400 mt-2 pl-9">(Dismiss to cancel)</p>
+        <p className="text-xs text-gray-400 mt-2 pl-9">(Keep open for live updates)</p>
       </div>
     );
   }
@@ -147,7 +147,7 @@ export default function GenerateDocumentPopup({ onClose, projectId = null, onOut
                   >
                     {templates.map(t => (
                       <option key={t.id} value={t.id}>
-                        {t.name} ({t.document_type || 'document'})
+                        {t.typeLabel}{t.name && t.name !== t.typeLabel ? ` — ${t.name}` : ''}
                       </option>
                     ))}
                     {noTemplates && <option value="">— No templates available —</option>}

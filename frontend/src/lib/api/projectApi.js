@@ -411,6 +411,11 @@ export const projectApi = {
           }
           // OutputsSection uses output.url; transformDatabaseObject maps file_url → fileUrl
           transformed.url = transformed.fileUrl;
+          // Retroactively format any raw slugs still in the DB (e.g. "role_specification" → "Role Specification")
+          if (transformed.type && transformed.type.includes('_') && !transformed.type.includes(' ')) {
+            transformed.type = transformed.type
+              .split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+          }
           return transformed;
         });
     } catch (error) {

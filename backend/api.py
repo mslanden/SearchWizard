@@ -765,9 +765,21 @@ async def _run_generation_job(
         )
         file_url = supabase.storage.from_('project-outputs').get_public_url(file_path)
 
-        document_type = context.get('document_type', '') or 'Document'
+        document_type = context.get('document_type', '') or ''
+        # Resolve slug (e.g. "role_specification") to friendly label (e.g. "Role Specification")
+        type_label = document_type
+        try:
+            type_resp = supabase.table('artifact_types').select('name') \
+                .eq('id', document_type).eq('category', 'golden') \
+                .single().execute()
+            if type_resp.data:
+                type_label = type_resp.data['name']
+        except Exception:
+            pass  # keep slug as fallback
+        if not type_label:
+            type_label = 'Document'
         supabase.table('project_outputs').update({
-            'output_type': document_type,
+            'output_type': type_label,
             'file_url': file_url,
             'file_path': file_path,
             'file_type': 'text/html',

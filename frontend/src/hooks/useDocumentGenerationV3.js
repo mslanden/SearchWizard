@@ -12,6 +12,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { storageApi } from '../lib/api';
 
 const DEFAULT_BACKEND_URL = 'https://searchwizard-production.up.railway.app';
 const POLL_INTERVAL_MS = 4000;
@@ -23,6 +24,13 @@ function getBackendUrl() {
     url = `https://${url}`;
   }
   return url;
+}
+
+// Converts a slug like "role_specification" → "Role Specification" as a fallback
+// when the artifact_types DB lookup doesn't have an entry for the slug.
+function formatTypeSlug(slug) {
+  if (!slug) return '';
+  return slug.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
 export default function useDocumentGenerationV3(projectId, { onOutputGenerated } = {}) {
@@ -40,7 +48,7 @@ export default function useDocumentGenerationV3(projectId, { onOutputGenerated }
 
   const [userComment, setUserComment] = useState('');
   const [documentName, setDocumentName] = useState('(New Document)');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // true on mount so spinner shows immediately
   const [isGenerating, setIsGenerating] = useState(false); // true while background job is polling
   const [error, setError] = useState(null);
 
@@ -83,9 +91,10 @@ export default function useDocumentGenerationV3(projectId, { onOutputGenerated }
       setLoading(true);
       setError(null);
 
-      const response = await fetch(
-        `${getBackendUrl()}/api/templates?user_id=${user.id}`
-      );
+      const [response, goldenTypes] = await Promise.all([
+        fetch(`${getBackendUrl()}/api/templates?user_id=${user.id}`),
+        storageApi.getArtifactTypes('golden'),
+      ]);
       if (!response.ok) throw new Error('Failed to fetch templates');
 
       const data = await response.json();
@@ -96,8 +105,15 @@ export default function useDocumentGenerationV3(projectId, { onOutputGenerated }
         (t) => t.status === 'ready' && t.blueprint != null
       );
 
-      setTemplates(v3Templates);
-      setSelectedTemplate(v3Templates[0] || null);
+      // Attach a user-friendly typeLabel to each template for display in the dropdown
+      const typeMap = Object.fromEntries((goldenTypes || []).map(t => [t.id, t.name]));
+      const labeled = v3Templates.map(t => ({
+        ...t,
+        typeLabel: typeMap[t.document_type] || formatTypeSlug(t.document_type) || t.name,
+      }));
+
+      setTemplates(labeled);
+      setSelectedTemplate(labeled[0] || null);
     } catch (err) {
       setError(`Failed to load templates: ${err.message}`);
     } finally {
@@ -159,7 +175,6 @@ export default function useDocumentGenerationV3(projectId, { onOutputGenerated }
 
   const startPolling = (jobId) => {
     let attempts = 0;
-    setIsGenerating(true);
 
     pollIntervalRef.current = setInterval(async () => {
       attempts++;
@@ -203,17 +218,18 @@ export default function useDocumentGenerationV3(projectId, { onOutputGenerated }
 
   // ─── Public Actions ───────────────────────────────────────────────────────
 
-  /** Submit generation job; popup transitions to non-blocking Generating state. */
+  /** Submit generation job; popup transitions to floating card immediately. */
   const handleGenerateMagic = async () => {
     try {
       setLoading(true);
       setError(null);
+      setIsGenerating(true); // transition to floating card before awaiting API
       const result = await callGenerateV3(false);
       setLoading(false);
-      // result contains { job_id, status:'processing' }
       startPolling(result.job_id);
       return true;
     } catch (err) {
+      setIsGenerating(false); // revert on error so full modal is shown again
       setError(err.message || 'An error occurred during generation');
       setLoading(false);
       return false;
@@ -244,12 +260,14 @@ export default function useDocumentGenerationV3(projectId, { onOutputGenerated }
     try {
       setLoading(true);
       setError(null);
+      setIsGenerating(true); // transition to floating card before awaiting API
       const result = await callGenerateV3(false);
       setPreviewData(null);
       setLoading(false);
       startPolling(result.job_id);
       return true;
     } catch (err) {
+      setIsGenerating(false); // revert on error
       setError(err.message || 'An error occurred during generation');
       setLoading(false);
       return false;
