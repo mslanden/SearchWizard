@@ -17,6 +17,13 @@ protect against context loss across sessions, crashes, or reboots.
 
 ---
 
+## Communication Style
+
+- **Minimize token use.** Omit status updates while applying fixes and code changes. Provide a brief summary when complete covering what was changed and accomplished.
+- **Be succinct.** Keep all interactions concise — complete and clear, but not verbose. Avoid unnecessary preamble, restatements, or filler.
+
+---
+
 ## Collaboration Rules
 
 - **Ask for clarification only when truly blocking.** If a requirement is ambiguous
