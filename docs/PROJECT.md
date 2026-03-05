@@ -308,6 +308,7 @@ a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB 
 | 39 | Floating generating card shows "(Dismiss to cancel)" — label is misleading since dismissing only stops polling and the document still saves | **Fixed (Mar 2026)** | Text changed to "(Keep open for live updates)". |
 | 40 | Outputs table Type column shows the internal type ID (e.g. "role_specification") instead of the user-friendly label (e.g. "Role Specification"). | **Fixed (Mar 2026)** | Backend `_run_generation_job` now looks up `artifact_types` table to store the friendly label in `output_type`. Frontend `getProjectOutputs` also applies a slug-to-label formatter as a retroactive fallback for existing DB rows. |
 | 41 | Project Details "Description" field is not saved — reopening "Edit Project" shows a blank Description field | Open | Not yet investigated. |
+| 42 | Cannot add or change a Candidate's profile picture in "Edit Candidate Profile" — clicking the photo icon overlay does not open the file chooser. Likely affects Interviewers as well — fix in both places when addressed. | Open | Not yet investigated. |
 
 ---
 
