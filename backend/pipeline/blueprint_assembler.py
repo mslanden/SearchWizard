@@ -157,12 +157,18 @@ def assemble_blueprint(
         document_type:      e.g. "role_specification".
         content_spec:       Output of Stage B (semantic analyzer).
         layout_spec:        Output of Stage C (layout analyzer).
-        visual_spec:        Output of Stage D (visual style analyzer).
+        visual_spec:        Output of Stage D (visual style analyzer). May contain
+                            a 'visual_style_guidance' key with natural-language style
+                            description — extracted here and stored as a top-level
+                            blueprint field, separate from visual_style_spec.
         idm:                The Intermediate Document Model (used for confidence flagging).
 
     Returns:
         Complete blueprint dict ready for storage in golden_examples.blueprint.
     """
+    # Extract natural-language guidance before validation (which operates on tokens only)
+    visual_style_guidance = visual_spec.pop("visual_style_guidance", "")
+
     # Validate and fill each spec
     content_spec = _validate_content_spec(content_spec)
     layout_spec = _validate_layout_spec(layout_spec)
@@ -182,12 +188,14 @@ def assemble_blueprint(
         "content_structure_spec": content_spec,
         "layout_spec": layout_spec,
         "visual_style_spec": visual_spec,
+        "visual_style_guidance": visual_style_guidance,
     }
 
     print(
         f"Blueprint assembled: {len(content_spec.get('sections', []))} sections, "
         f"column={layout_spec.get('column_structure')}, "
-        f"typography roles={list(visual_spec.get('typography', {}).keys())}"
+        f"typography roles={list(visual_spec.get('typography', {}).keys())}, "
+        f"guidance={'yes' if visual_style_guidance else 'no'}"
     )
 
     return blueprint

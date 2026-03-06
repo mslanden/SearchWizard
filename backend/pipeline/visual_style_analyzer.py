@@ -269,6 +269,55 @@ def _merge_tokens(algorithmic: dict, vision: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Natural-language guidance generation
+# ---------------------------------------------------------------------------
+
+_GUIDANCE_SYSTEM_PROMPT = (
+    "You are a visual design consultant writing style instructions for an AI document generator. "
+    "Be specific, prescriptive, and concise. Use plain English — no JSON, no lists of tokens."
+)
+
+_GUIDANCE_USER_TEMPLATE = """Based on the following visual design tokens extracted from a professional executive search document, write 3–5 concise paragraphs in plain English describing the document's visual style. This description will be used to instruct an AI to reproduce documents in the same style.
+
+Cover:
+- Typography: primary font(s), sizes, and weights for headings (H1, H2, H3) and body text, including any colour applied to headings
+- Colour palette: primary, accent, and background colours and where/how each is used
+- Layout and spacing conventions: margins, column structure, spacing between sections and paragraphs
+- Bullet and list styling
+- Any notable visual conventions (horizontal rules, borders, table header styles, image placement)
+
+Be specific (e.g. "H1 headings use Georgia Bold at 24pt in deep navy #2E4057, separated from body text by a 1pt accent-colour rule").
+
+Visual design tokens:
+{tokens_json}
+
+Write the style guidance now:"""
+
+
+async def _generate_visual_style_guidance(tokens: dict, client) -> str:
+    """
+    Call Claude to produce a natural-language visual style description from
+    the final merged design tokens. Returns an empty string on failure.
+    """
+    try:
+        response = await client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=800,
+            system=_GUIDANCE_SYSTEM_PROMPT,
+            messages=[{
+                "role": "user",
+                "content": _GUIDANCE_USER_TEMPLATE.format(
+                    tokens_json=json.dumps(tokens, indent=2)
+                ),
+            }],
+        )
+        return response.content[0].text.strip() if response.content else ""
+    except Exception as e:
+        print(f"Visual style guidance generation failed: {e}")
+        return ""
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -283,7 +332,9 @@ async def analyze_visual_style(file_bytes: bytes, source_format: str, idm: dict,
         client:         anthropic.AsyncAnthropic instance.
 
     Returns:
-        visual_style_spec dict.
+        dict with all visual_style_spec fields plus a 'visual_style_guidance' key
+        containing a natural-language style description for the generation prompt.
+        The assembler extracts and stores visual_style_guidance separately in the blueprint.
     """
     try:
         # Step 1: algorithmic extraction from IDM metadata
@@ -317,6 +368,11 @@ async def analyze_visual_style(file_bytes: bytes, source_format: str, idm: dict,
                     "color_hex": "#000000",
                     "inferred": True,
                 }
+
+        # Step 4: generate natural-language guidance for the generation prompt
+        print("Visual style analyzer: generating natural-language style guidance")
+        guidance = await _generate_visual_style_guidance(final_tokens, client)
+        final_tokens["visual_style_guidance"] = guidance
 
         return final_tokens
 

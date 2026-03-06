@@ -77,12 +77,12 @@ async def build_brain_context(
     )
 
     # 5. Assemble prompt
-    visual_style_spec = blueprint.get('visual_style_spec', {})
+    visual_style_guidance = blueprint.get('visual_style_guidance', '')
     prompt = build_generation_prompt(
         blueprint=blueprint,
         ranked_artifacts=ranked,
         entity_context=entity_ctx,
-        visual_style_spec=visual_style_spec,
+        visual_style_guidance=visual_style_guidance,
         user_requirements=user_requirements,
     )
 

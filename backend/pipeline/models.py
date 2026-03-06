@@ -147,3 +147,4 @@ class JSONBlueprint(BaseModel):
     content_structure_spec: ContentStructureSpec
     layout_spec: LayoutSpec
     visual_style_spec: VisualStyleSpec
+    visual_style_guidance: str = ""   # Natural-language style description for the generation prompt
