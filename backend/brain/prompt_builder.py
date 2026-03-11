@@ -5,12 +5,12 @@ Prompt order:
   1. Persona + INSTRUCTION (top)
   2. DOCUMENT BLUEPRINT (full, unsummarized: content structure, layout, visual style guidance)
   3. ENTITY CONTEXT
-  4. SECTION CONTENT GUIDANCE (artifact content per section, up to 50k chars each)
+  4. ARTIFACT CONTEXT (top 5 globally ranked artifacts, each included once)
   5. USER REQUIREMENTS (if provided)
 """
 
 MAX_ARTIFACT_CONTENT_CHARS = 50_000  # chars per artifact in the prompt
-MAX_ARTIFACTS_PER_SECTION = 3        # max artifacts shown per section
+MAX_GLOBAL_ARTIFACTS = 5             # top N artifacts included once for the whole document
 
 _PERSONA_AND_INSTRUCTION = """\
 You are an exceptional Executive Search consultant, widely regarded as the premier talent at your top-tier firm. Your extraordinary ability to match the right leader with the right organization at the right time has made you the most trusted advisor to boards and CEOs seeking transformational leadership. Your writing is elegant yet accessible, combining rigorous analysis with narrative storytelling. Accuracy is paramount, while still managing to make your work compelling and engaging.
@@ -54,53 +54,23 @@ def build_generation_prompt(
     parts.append("\n---\n\n## ENTITY CONTEXT")
     parts.append(_format_entity_context(entity_context))
 
-    # 4. Section-by-section artifact content
-    by_section = ranked_artifacts.get('by_section', {})
-    sections = blueprint.get('content_structure_spec', {}).get('sections', [])
-
-    if sections and by_section:
-        parts.append(
-            "\n---\n\n## SECTION CONTENT GUIDANCE\n"
-            "The following source material has been matched to each section of the document. "
-            "Use it as the factual foundation — incorporate key points accurately and do not "
-            "introduce facts not present here."
-        )
-        for section in sections:
-            sid = section.get('section_id', '')
-            title = section.get('title', sid)
-            intent = section.get('intent', '')
-            rhetorical = section.get('rhetorical_pattern', '')
-            matches = by_section.get(sid, [])
-
-            header = f"\n### {title} ({sid})"
-            if intent:
-                header += f"\nIntent: {intent}"
-            if rhetorical:
-                header += f"\nPattern: {rhetorical}"
-            parts.append(header)
-
-            if not matches:
-                parts.append("_No specific artifacts matched this section._")
-                continue
-
-            for match in matches[:MAX_ARTIFACTS_PER_SECTION]:
-                art = match['artifact']
-                content = (art.get('processed_content') or '').strip()
-                if not content:
-                    content = f"[{art.get('artifact_type', 'artifact')} — no text content available]"
-                else:
-                    content = content[:MAX_ARTIFACT_CONTENT_CHARS]
-                entity_label = _entity_label(art)
-                parts.append(f"\n**{art.get('name', 'Artifact')}** ({entity_label}):\n{content}")
-    else:
-        # No blueprint sections — include globally ranked artifacts as flat context
-        parts.append("\n---\n\n## ARTIFACT CONTEXT")
-        for item in ranked_artifacts.get('global', [])[:10]:
-            art = item['artifact']
-            content = (art.get('processed_content') or '').strip()[:MAX_ARTIFACT_CONTENT_CHARS]
-            entity_label = _entity_label(art)
-            if content:
-                parts.append(f"\n**{art.get('name', 'Artifact')}** ({entity_label}):\n{content}")
+    # 4. Top-5 globally ranked artifacts, each included once
+    parts.append(
+        "\n---\n\n## ARTIFACT CONTEXT\n"
+        "The following source material has been selected as the most relevant artifacts for "
+        "this document. Use it as the factual foundation — incorporate key points accurately "
+        "and do not introduce facts not present here. Apply each artifact's content to "
+        "whichever sections of the document it best supports."
+    )
+    for item in ranked_artifacts.get('global', [])[:MAX_GLOBAL_ARTIFACTS]:
+        art = item['artifact']
+        content = (art.get('processed_content') or '').strip()
+        if not content:
+            content = f"[{art.get('artifact_type', 'artifact')} — no text content available]"
+        else:
+            content = content[:MAX_ARTIFACT_CONTENT_CHARS]
+        entity_label = _entity_label(art)
+        parts.append(f"\n**{art.get('name', 'Artifact')}** ({entity_label}):\n{content}")
 
     # 5. User requirements
     if user_requirements and user_requirements.strip():

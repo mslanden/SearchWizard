@@ -172,37 +172,18 @@ def format_selected_artifacts_summary(ranked_artifacts: dict) -> list[dict]:
     """
     Return a lightweight, frontend-safe summary of the Brain's artifact selection.
     Used by the PromptPreviewModal to show which artifacts were chosen and why.
+    Returns the top 5 globally ranked artifacts (matching what is sent in the prompt).
     """
-    seen_ids: set[str] = set()
     summary = []
-
-    by_section = ranked_artifacts.get('by_section', {})
-    for section_id, items in by_section.items():
-        for item in items:
-            art = item['artifact']
-            if art['id'] not in seen_ids:
-                seen_ids.add(art['id'])
-                summary.append({
-                    'id': art['id'],
-                    'name': art.get('name', 'Unnamed'),
-                    'artifact_type': art.get('artifact_type', ''),
-                    'entity_type': art.get('entity_type', ''),
-                    'section_id': section_id,
-                    'score': round(item['score'], 3),
-                })
-
-    # Include any globally ranked artifacts not already captured
-    for item in ranked_artifacts.get('global', []):
+    for item in ranked_artifacts.get('global', [])[:5]:
         art = item['artifact']
-        if art['id'] not in seen_ids:
-            seen_ids.add(art['id'])
-            summary.append({
-                'id': art['id'],
-                'name': art.get('name', 'Unnamed'),
-                'artifact_type': art.get('artifact_type', ''),
-                'entity_type': art.get('entity_type', ''),
-                'section_id': None,
-                'score': round(item['score'], 3),
-            })
+        summary.append({
+            'id': art['id'],
+            'name': art.get('name', 'Unnamed'),
+            'artifact_type': art.get('artifact_type', ''),
+            'entity_type': art.get('entity_type', ''),
+            'section_id': None,
+            'score': round(item['score'], 3),
+        })
 
     return summary
