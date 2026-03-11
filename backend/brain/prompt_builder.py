@@ -248,9 +248,9 @@ def _format_entity_context(entity_context: dict) -> str:
 
 
 def _entity_label(artifact: dict) -> str:
-    """Short human-readable label for an artifact's entity and type."""
+    """Short human-readable label for an artifact's entity, category, and type."""
     entity_type = artifact.get('entity_type', '')
+    category = artifact.get('category', '')
     artifact_type = artifact.get('artifact_type', '')
-    if entity_type and artifact_type:
-        return f"{entity_type} · {artifact_type}"
-    return entity_type or artifact_type or 'artifact'
+    parts = [p for p in [entity_type, category, artifact_type] if p]
+    return ' · '.join(parts) if parts else 'artifact'

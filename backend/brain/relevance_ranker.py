@@ -85,23 +85,54 @@ def _score_artifact(artifact: dict, section_embedding: list | None, intent: str)
 
 def _keyword_score(artifact: dict, intent: str) -> float:
     """
-    Simple word-overlap fallback used when embeddings are unavailable.
+    Word-overlap fallback used when embeddings are unavailable.
+    Combines:
+      - Text overlap: intent words vs artifact name/type/summary/content
+      - Category affinity: role artifacts score higher for role-relevant sections,
+        company artifacts higher for company-relevant sections
     Minimum score of 0.1 ensures every artifact has a non-zero chance of inclusion.
     """
     if not intent:
         return 0.1
-    intent_words = set(re.findall(r'\w+', intent.lower()))
+
+    intent_lower = intent.lower()
+    intent_words = set(re.findall(r'\w+', intent_lower))
+
+    # Build artifact text from all available fields (summary often populated even
+    # when processed_content is null)
     content = ' '.join(filter(None, [
         artifact.get('name', ''),
         artifact.get('artifact_type', ''),
         artifact.get('document_type', ''),
+        artifact.get('summary', '') or '',
         (artifact.get('processed_content') or '')[:2000],
     ]))
     content_words = set(re.findall(r'\w+', content.lower()))
+
     if not intent_words or not content_words:
-        return 0.1
-    overlap = len(intent_words & content_words)
-    return min(0.9, max(0.1, overlap / len(intent_words)))
+        base = 0.1
+    else:
+        overlap = len(intent_words & content_words)
+        base = min(0.85, max(0.1, overlap / len(intent_words)))
+
+    # Category-affinity boost: infer section type from intent keywords and
+    # reward artifacts whose category aligns with the section's subject matter.
+    category = (artifact.get('category') or '').lower()
+    boost = 0.0
+    if category == 'role':
+        _ROLE_SIGNALS = {'role', 'mandate', 'responsibilities', 'candidate', 'profile',
+                         'competenc', 'compensation', 'location', 'reporting', 'cto',
+                         'ceo', 'cfo', 'vp', 'director', 'position', 'requirement'}
+        if intent_words & _ROLE_SIGNALS:
+            boost = 0.15
+    elif category == 'company':
+        _COMPANY_SIGNALS = {'company', 'business', 'organization', 'background',
+                            'market', 'product', 'ownership', 'acquisition', 'investor',
+                            'revenue', 'growth', 'strategic', 'about', 'firm'}
+        if intent_words & _COMPANY_SIGNALS:
+            boost = 0.15
+
+    return min(0.9, base + boost)
 
 
 def _compute_global_ranking(artifacts: list[dict], artifact_scores: dict) -> list[dict]:
