@@ -117,7 +117,9 @@ def _keyword_score(artifact: dict, intent: str) -> float:
 
     # Category-affinity boost: infer section type from intent keywords and
     # reward artifacts whose category aligns with the section's subject matter.
-    category = (artifact.get('category') or '').lower()
+    # artifact_type is 'company' or 'role' for project artifacts; entity_type
+    # is 'candidate' or 'interviewer' for candidate/process artifacts.
+    category = (artifact.get('artifact_type') or artifact.get('entity_type') or '').lower()
     boost = 0.0
     if category == 'role':
         _ROLE_SIGNALS = {'role', 'mandate', 'responsibilities', 'candidate', 'profile',

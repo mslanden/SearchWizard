@@ -13,7 +13,7 @@ key_topics is derived in-memory from tags (no separate DB column needed).
 
 
 ARTIFACT_SELECT = (
-    'id, name, artifact_type, document_type, category, processed_content, embedding, summary, tags'
+    'id, name, artifact_type, document_type, processed_content, embedding, summary, tags'
 )
 CANDIDATE_ARTIFACT_SELECT = (
     'id, name, artifact_type, processed_content, embedding, summary, tags'
