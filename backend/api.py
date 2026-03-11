@@ -99,6 +99,7 @@ _base_origins = [
     "https://searchwizard.ai",
     "https://www.searchwizard.ai",
     "https://search-wizard-smoky.vercel.app",
+    "https://search-wizard-git-staging-scott-texeiras-projects.vercel.app",
     "http://localhost:3000",
     "http://localhost:3001",
 ]

@@ -176,87 +176,36 @@ def download_and_extract_from_url(file_url, name="Unknown"):
 
 def extract_text_from_pdf(pdf_content):
     """
-    Extract text from PDF binary content.
-    
+    Extract text from PDF binary content using PyMuPDF (fitz).
+
+    PyMuPDF is significantly more reliable than PyPDF2 for design-heavy PDFs
+    (common in executive search), which is why the V3 blueprint pipeline uses it.
+
     Args:
         pdf_content (bytes): Binary content of the PDF file
-        
+
     Returns:
-        str: Extracted text from the PDF
+        str: Extracted text, or a bracketed error string if extraction fails.
     """
-    # First, save a small sample of the PDF content for debugging
-    sample = pdf_content[:100].hex()
-    logger.info(f"PDF content sample (first 100 bytes): {sample}")
-    logger.info(f"Total PDF content size: {len(pdf_content)} bytes")
-    
+    logger.info(f"Extracting text from PDF ({len(pdf_content)} bytes)")
     try:
-        # Import PyPDF2 here to avoid import errors if not available
-        import PyPDF2
-        print(f"Using PyPDF2 version: {PyPDF2.__version__}")
-        
-        # Create a file-like object from the content
-        pdf_stream = io.BytesIO(pdf_content)
-        pdf_stream.seek(0)  # Ensure we're at the start of the stream
-        
-        # Try to validate if this is actually a PDF
-        if pdf_content[:4] != b'%PDF':
-            logger.warning("Content does not appear to be a valid PDF (missing %PDF header)")
-            # Try to recover by looking for PDF signature anywhere in the first 1KB
-            pdf_sig_pos = pdf_content[:1024].find(b'%PDF')
-            if pdf_sig_pos >= 0:
-                logger.info(f"Found PDF signature at position {pdf_sig_pos}, attempting recovery")
-                pdf_stream = io.BytesIO(pdf_content[pdf_sig_pos:])
-            else:
-                return "[Content does not appear to be a valid PDF file]" 
-        
-        # Use PyPDF2 to extract text
-        pdf_reader = PyPDF2.PdfReader(pdf_stream)
-        
-        # Extract text from all pages
-        extracted_text = ""
-        total_pages = len(pdf_reader.pages)
-        logger.info(f"Extracting text from PDF with {total_pages} pages")
-        
-        for page_num in range(total_pages):
-            try:
-                page = pdf_reader.pages[page_num]
-                page_text = page.extract_text()
-                if page_text:
-                    extracted_text += page_text + "\n\n"
-                logger.info(f"Extracted {len(page_text) if page_text else 0} chars from page {page_num+1}")
-            except Exception as page_error:
-                logger.error(f"Error extracting text from page {page_num+1}: {str(page_error)}")
-                extracted_text += f"[Error extracting page {page_num+1}]\n\n"
-            
+        import fitz  # PyMuPDF
+        doc = fitz.open(stream=pdf_content, filetype="pdf")
+        pages_text = []
+        for page in doc:
+            text = page.get_text()
+            if text.strip():
+                pages_text.append(text)
+        doc.close()
+
+        extracted_text = "\n\n".join(pages_text)
         if not extracted_text.strip():
-            logger.warning("PDF text extraction yielded empty content")
-            # Try an alternative extraction method
-            try:
-                # Try a different approach for scanned PDFs
-                alternate_text = ""
-                for page_num in range(total_pages):
-                    page = pdf_reader.pages[page_num]
-                    # Try to get text using different extraction parameters
-                    if hasattr(page, 'get_text'):
-                        alternate_text += page.get_text("text") + "\n\n"
-                    
-                if alternate_text.strip():
-                    logger.info(f"Alternative extraction method yielded {len(alternate_text)} chars")
-                    return alternate_text
-            except Exception as alt_error:
-                logger.error(f"Alternative extraction method failed: {str(alt_error)}")
-            
-            return "[PDF document contains no extractable text content or may be scanned/image-based]"  
-        
-        logger.info(f"Successfully extracted {len(extracted_text)} chars of text from PDF")
-        
-        # Check for common PDF issues that might indicate extraction problems
-        if "trailer" in extracted_text and "xref" in extracted_text and "startxref" in extracted_text:
-            logger.warning("Extracted text contains PDF structure elements - may be raw PDF")
-            return "[PDF extraction error: raw PDF structure detected in output]"  
-            
+            logger.warning("PyMuPDF text extraction yielded empty content (likely scanned/image PDF)")
+            return "[PDF document contains no extractable text content or may be scanned/image-based]"
+
+        logger.info(f"Successfully extracted {len(extracted_text)} chars from PDF")
         return extracted_text
-        
+
     except Exception as e:
         logger.error(f"Error extracting text from PDF: {type(e).__name__}: {str(e)}")
         return f"[PDF text extraction failed: {str(e)}]"
