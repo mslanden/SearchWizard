@@ -120,8 +120,22 @@ def _format_full_blueprint(blueprint: dict, visual_style_guidance: str) -> str:
     if document_type:
         lines.append(f"Document type: {document_type}\n")
 
+    # Document profile (purpose, audience, writing style, voice)
+    content_spec = blueprint.get('content_structure_spec', {})
+    doc_profile = content_spec.get('document_profile', {})
+    if doc_profile:
+        lines.append("### Document Profile\n")
+        if doc_profile.get('purpose'):
+            lines.append(f"**Purpose:** {doc_profile['purpose']}\n")
+        if doc_profile.get('audience'):
+            lines.append(f"**Audience:** {doc_profile['audience']}\n")
+        if doc_profile.get('writing_style'):
+            lines.append(f"**Writing Style:** {doc_profile['writing_style']}\n")
+        if doc_profile.get('voice'):
+            lines.append(f"**Voice:** {doc_profile['voice']}\n")
+
     # Content structure — all section fields
-    sections = blueprint.get('content_structure_spec', {}).get('sections', [])
+    sections = content_spec.get('sections', [])
     if sections:
         lines.append(f"### Content Structure ({len(sections)} sections)\n")
         _append_sections(lines, sections, indent=0)
@@ -183,15 +197,19 @@ def _append_sections(lines: list, sections: list, indent: int) -> None:
         lines.append(f"\n{prefix}**{title}** (section_id: {sid})")
         if s.get('typography_role'):
             lines.append(f"{prefix}- Typography role: {s['typography_role']}")
-        if s.get('rhetorical_pattern'):
-            lines.append(f"{prefix}- Rhetorical pattern: {s['rhetorical_pattern']}")
         if s.get('intent'):
             lines.append(f"{prefix}- Intent: {s['intent']}")
+        if s.get('phrasing_style'):
+            lines.append(f"{prefix}- Phrasing: {s['phrasing_style']}")
+        if s.get('rhetorical_pattern'):
+            lines.append(f"{prefix}- Pattern: {s['rhetorical_pattern']}")
+        if s.get('content_guidelines'):
+            lines.append(f"{prefix}- Formatting: {s['content_guidelines']}")
         allowed = s.get('allowed_element_types', [])
         if allowed:
             lines.append(f"{prefix}- Allowed elements: {', '.join(allowed)}")
         if s.get('micro_template'):
-            lines.append(f"{prefix}- Micro-template: {s['micro_template']}")
+            lines.append(f"{prefix}- Template: {s['micro_template']}")
         children = s.get('child_sections', [])
         if children:
             _append_sections(lines, children, indent + 1)
