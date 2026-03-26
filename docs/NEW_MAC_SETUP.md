@@ -1,7 +1,7 @@
 # SearchWizard — New Mac Setup & Project Onboarding
 
 > Complete setup guide for a new MacBook Pro running macOS Tahoe 26.4+.
-> Assumes the full `/Users/stexeira/Codex/search-wizard` directory has already been
+> Assumes the full `/Users/stexeira/search-wizard` directory has already been
 > transferred to the new machine. A Claude Code session reading this document should
 > have everything needed to start working immediately.
 
@@ -102,7 +102,7 @@ git config --global user.email "your@email.com"
 
 ### 2.3 Verify the remote
 
-From the project root (`/Users/stexeira/Codex/search-wizard`):
+From the project root (`/Users/stexeira/search-wizard`):
 
 ```bash
 git remote -v
@@ -136,12 +136,12 @@ git pull origin staging
 ## 3. Backend — Local Setup
 
 The backend is a Python 3.11 FastAPI application. All backend files live in
-`/Users/stexeira/Codex/search-wizard/backend/`.
+`/Users/stexeira/search-wizard/backend/`.
 
 ### 3.1 Install Python dependencies
 
 ```bash
-cd /Users/stexeira/Codex/search-wizard/backend
+cd /Users/stexeira/search-wizard/backend
 pip3.11 install --upgrade pip
 pip3.11 install -r requirements.txt
 ```
@@ -193,12 +193,12 @@ PORT=8000
 ## 4. Frontend — Local Setup
 
 The frontend is a Next.js 16 app. All frontend files live in
-`/Users/stexeira/Codex/search-wizard/frontend/`.
+`/Users/stexeira/search-wizard/frontend/`.
 
 ### 4.1 Install Node dependencies
 
 ```bash
-cd /Users/stexeira/Codex/search-wizard/frontend
+cd /Users/stexeira/search-wizard/frontend
 npm install
 ```
 
@@ -224,14 +224,14 @@ Open two terminal windows/tabs:
 
 **Terminal 1 — Backend:**
 ```bash
-cd /Users/stexeira/Codex/search-wizard/backend
+cd /Users/stexeira/search-wizard/backend
 uvicorn api:app --reload --port 8000
 ```
 Backend available at: `http://localhost:8000`
 
 **Terminal 2 — Frontend:**
 ```bash
-cd /Users/stexeira/Codex/search-wizard/frontend
+cd /Users/stexeira/search-wizard/frontend
 npm run dev
 ```
 Frontend available at: `http://localhost:3000`
