@@ -628,7 +628,7 @@ Current machine versions at time of writing (March 2026):
 
 | Tool | Version |
 |------|---------|
-| macOS | Darwin 21.6.0 → upgrading to Tahoe 26.4 |
+| macOS | Tahoe 26.4 |
 | Node | v24.13.0 |
 | npm | 11.6.2 |
 | Python (system) | 3.14.3 |
