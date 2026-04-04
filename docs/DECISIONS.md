@@ -532,3 +532,39 @@ of whether headings are outlined/vector in the source PDF.
 - `83fd138` — Claude Vision pass added to Stage B
 - `06df8d9` — Stage A.5 OCR Enricher (`ocr_enricher.py`) + pipeline runner integration
 - `cfdfe67` — Fix Stage A.5: switch to tool use; raise `_OCR_MAX_TOKENS` 6000 → 8000
+
+---
+
+## ADR-015 — Andro Chat Bar: Non-Functional Scaffold (Apr 2026)
+
+**Status:** Active (scaffold only — backend not wired)
+
+**Decision:**
+A non-functional `AndroChatBar` component has been added to the project detail page
+(`frontend/src/components/project/AndroChatBar.jsx`), positioned above the project header
+card. It presents the intended UI surface for an AI assistant ("Andro") integrated into
+the project context, but makes no API calls and has no state persistence.
+
+**Component structure:**
+- `+` button → dropdown: Upload files or photos / Select from Project Vault / Web Search (all no-ops)
+- Text input: placeholder "Ask Andro for help with this project..."
+- Dark "Ask Andro" submit button (no-op)
+
+**Reasoning:**
+- Placing the UI scaffold first allows UX feedback before backend implementation begins
+- Decouples frontend layout decisions from backend API design
+- The component location (above project header, full-width card style) establishes the
+  interaction pattern: Andro operates in the context of a specific project, with access
+  to its vault of artifacts
+
+**Required future work:**
+1. Design and implement backend endpoint (likely `POST /api/projects/{id}/chat`)
+2. Wire `AndroChatBar` to send message + `project_id`; stream or poll response
+3. Implement the three attachment options (file upload, vault selector, web search)
+4. Decide whether chat history should be persisted per project in the DB
+
+**Files:**
+- `frontend/src/components/project/AndroChatBar.jsx` (new)
+- `frontend/src/app/projects/[id]/page.tsx` — renders `<AndroChatBar />` above `<ProjectHeader>`
+
+**Commits:** `bb02c61`
