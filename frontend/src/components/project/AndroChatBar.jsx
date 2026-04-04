@@ -33,7 +33,7 @@ export default function AndroChatBar() {
           <PlusIcon className="w-5 h-5 text-gray-500 dark:text-dark-text-secondary" />
         </button>
         {dropdownOpen && (
-          <div className="absolute bottom-full left-0 mb-2 w-52 bg-white dark:bg-dark-bg-secondary border border-gray-200 dark:border-dark-border rounded-md shadow-md z-10">
+          <div className="absolute top-full left-0 mt-2 w-52 bg-white dark:bg-dark-bg-secondary border border-gray-200 dark:border-dark-border rounded-md shadow-md z-10">
             {menuItems.map(({ label, icon: Icon }) => (
               <button
                 key={label}

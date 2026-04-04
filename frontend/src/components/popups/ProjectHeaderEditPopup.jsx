@@ -53,7 +53,7 @@ export default function ProjectHeaderEditPopup({ project, onClose, onSave }) {
                     name="title"
                     value={formData.title}
                     onChange={handleChange}
-                    className="block w-full border border-gray-300 rounded-md px-4 py-2 focus:outline-none text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="block w-full border border-gray-300 rounded-md px-4 py-2 focus:outline-none text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     required
                   />
                 </div>
@@ -68,7 +68,7 @@ export default function ProjectHeaderEditPopup({ project, onClose, onSave }) {
                     name="client"
                     value={formData.client}
                     onChange={handleChange}
-                    className="block w-full border border-gray-300 rounded-md px-4 py-2 focus:outline-none text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="block w-full border border-gray-300 rounded-md px-4 py-2 focus:outline-none text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     required
                   />
                 </div>
@@ -83,7 +83,8 @@ export default function ProjectHeaderEditPopup({ project, onClose, onSave }) {
                     value={formData.description}
                     onChange={handleChange}
                     rows={4}
-                    className="block w-full border border-gray-300 rounded-md px-4 py-2 focus:outline-none text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Enter project description (optional)"
+                    className="block w-full border border-gray-300 rounded-md px-4 py-2 focus:outline-none text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
               </div>
