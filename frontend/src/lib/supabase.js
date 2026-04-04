@@ -138,6 +138,7 @@ export const projectsApi = {
         id: uuidv4(),
         title: project.title.trim(),
         client: project.client ? project.client.trim() : '',
+        description: project.description ? project.description.trim() : null,
         date: project.date || new Date().toISOString().split('T')[0],
         artifact_count: project.artifactCount || 0,
         background_color: project.backgroundColor || 'light-cream',
@@ -196,6 +197,11 @@ export const projectsApi = {
     if (updates.date !== undefined) updateData.date = updates.date;
     if (updates.artifactCount !== undefined) updateData.artifact_count = updates.artifactCount;
     if (updates.backgroundColor !== undefined) updateData.background_color = updates.backgroundColor;
+    if (updates.description !== undefined) {
+      updateData.description = typeof updates.description === 'string'
+        ? updates.description.trim()
+        : updates.description;
+    }
 
     // Check if there's anything to update
     if (Object.keys(updateData).length === 0) {

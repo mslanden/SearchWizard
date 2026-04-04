@@ -3,15 +3,16 @@
 import { useState, use, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { projectsApi } from '../../../lib/supabase';
 import { artifactApi } from '../../../lib/api';
 import ProjectPopups from '../../../components/project/ProjectPopups';
 import Header from '../../../components/Header';
 import ProjectHeader from '../../../components/project/header/ProjectHeader';
+import AndroChatBar from '../../../components/project/AndroChatBar';
 import ArtifactsSection from '../../../components/project/sections/ArtifactsSection';
 import PeopleSection from '../../../components/project/sections/PeopleSection';
 import OutputsSection from '../../../components/project/sections/OutputsSection';
+import BasePopup from '../../../components/common/BasePopup';
 
 // Import types and utilities
 import { Artifact, ArtifactUploadData, Candidate, CandidateFormData, Interviewer, InterviewerFormData, ProjectHeaderData, ProjectOutput } from '../../../types/project';
@@ -42,6 +43,7 @@ export default function ProjectDetail({ params }: PageProps) {
   const [artifactUploadType, setArtifactUploadType] = useState<'company' | 'role' | null>(null);
   const [isRenameOutputOpen, setIsRenameOutputOpen] = useState(false);
   const [currentOutput, setCurrentOutput] = useState<ProjectOutput | null>(null);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   // Memoized values for performance
   const companyArtifacts = useMemo(() => 
@@ -438,18 +440,17 @@ export default function ProjectDetail({ params }: PageProps) {
   // Handle project deletion
   const handleDeleteProject = async () => {
     if (!state.project) return;
-    
-    if (confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
-      try {
-        const success = await projectsApi.deleteProject(state.project.id);
-        if (success) {
-          router.push('/');
-        } else {
-          throw new Error('Delete operation failed');
-        }
-      } catch (err) {
-        handleError(err as Error, 'delete project');
+    try {
+      const success = await projectsApi.deleteProject(state.project.id);
+      if (success) {
+        router.push('/');
+      } else {
+        throw new Error('Delete operation failed');
       }
+    } catch (err) {
+      handleError(err as Error, 'delete project');
+    } finally {
+      setIsDeleteConfirmOpen(false);
     }
   };
 
@@ -492,23 +493,12 @@ export default function ProjectDetail({ params }: PageProps) {
     <div className="min-h-screen bg-gray-50 dark:bg-dark-bg transition-colors">
       <Header />
       <main className="container mx-auto px-4 py-8">
-        <div className="flex justify-between items-center mb-6">
-          <Link href="/" className="flex items-center text-gray-700 dark:text-dark-text-secondary hover:text-gray-900 dark:hover:text-dark-text transition-colors">
-            <ArrowLeftIcon className="w-4 h-4 mr-2 text-gray-700 dark:text-dark-text-secondary" />
-            Back to projects
-          </Link>
+        <AndroChatBar />
 
-          <button
-            onClick={handleDeleteProject}
-            className="bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800 text-white px-3 py-2 rounded-md shadow-sm text-sm transition-colors"
-          >
-            Delete Project
-          </button>
-        </div>
-
-        <ProjectHeader 
-          project={state.project} 
-          onEdit={openProjectHeaderEdit} 
+        <ProjectHeader
+          project={state.project}
+          onEdit={openProjectHeaderEdit}
+          onDelete={() => setIsDeleteConfirmOpen(true)}
         />
 
         <ArtifactsSection
@@ -584,6 +574,31 @@ export default function ProjectDetail({ params }: PageProps) {
         onInterviewerArtifactAdded={handleInterviewerArtifactAdded}
         onInterviewerArtifactDeleted={handleInterviewerArtifactDeleted}
       />
+
+      <BasePopup
+        isOpen={isDeleteConfirmOpen}
+        onClose={() => setIsDeleteConfirmOpen(false)}
+        title="Delete Project"
+        size="sm"
+      >
+        <p className="text-gray-700 dark:text-dark-text-secondary mb-6">
+          Are you sure you want to delete <strong>{state.project.title}</strong>? This action cannot be undone.
+        </p>
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={() => setIsDeleteConfirmOpen(false)}
+            className="px-4 py-2 text-sm rounded-md border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-secondary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleDeleteProject}
+            className="px-4 py-2 text-sm rounded-md bg-red-600 hover:bg-red-700 text-white transition-colors"
+          >
+            Delete Project
+          </button>
+        </div>
+      </BasePopup>
     </div>
   );
 }

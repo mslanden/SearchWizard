@@ -51,6 +51,7 @@ export default function CreateProjectPopup({ onClose }) {
       const formattedProject = {
         title: formData.title.trim(),
         client: formData.client.trim(),
+        description: formData.description.trim() || null,
         date: new Date().toISOString().split('T')[0], // Current date in YYYY-MM-DD format
         artifactCount: 0,
         backgroundColor: 'light-cream' // Default background color
