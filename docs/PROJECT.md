@@ -214,6 +214,10 @@ a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB 
 - Admin approval system (pending users, approve/deny, role management)
 - Dark mode
 - Staging environment (Railway + Vercel) — set up Feb 2026
+- Persistent header navigation — Projects / Transcription / Templates text links + Help icon (Apr 2026)
+- Project header simplification — trash icon delete with styled confirmation modal; description display; compact client · date layout (Apr 2026)
+- Andro chat bar scaffold (non-functional) — UI placeholder for future AI chat integration (Apr 2026)
+- Project description persistence — fixed on both create and edit flows (Apr 2026)
 - Document DNA Blueprint Pipeline (V3) — async multi-stage golden example analysis (Feb 2026)
 - Project Brain V3 document generation — semantic artifact retrieval, section-aware prompt assembly, candidate/interviewer targeting, Preview Prompt mode (Feb 2026)
 
@@ -266,7 +270,10 @@ a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB 
 16. Populate knowledge base files with real SearchWizard.ai content
 17. Remove `WriterAgent` file (`backend/agents/writer_agent.py`) — no longer imported
 18. Centralise the Claude model string into `ANTHROPIC_MODEL` constant or env var
-20. **Display project description on main project page** — if a project has a Description, show it on the project detail page beneath the date created. Currently the Description field can be set via "Edit Project" but is not displayed anywhere in the UI.
+20. ✅ **Display project description on main project page** — Description now displayed in the project header card beneath the title. Client name and date compacted to a single line with `·` separator. Fixed description persistence on both create and edit flows. (Apr 2026)
+21. ✅ **Persistent top-level navigation** — Header now has Projects / Transcription / Templates text links and a Help icon (?) before the icon buttons. Transcription and Templates are placeholders (`href="#"`) pending implementation. (Apr 2026)
+22. ✅ **Project header simplification** — Removed "← Back to projects" link and standalone red Delete Project button from the project detail page. Delete moved into the project header card as a trash icon (gray → red on hover) next to the pencil. Triggers a styled `BasePopup` confirmation modal instead of the browser-native `confirm()` dialog. (Apr 2026)
+23. ✅ **Andro chat bar scaffold** — Non-functional `AndroChatBar` component added above the project header card. Has a "+" dropdown (Upload files or photos / Select from Project Vault / Web Search), placeholder text "Ask Andro for help with this project...", and a dark "Ask Andro" button. All interactions are no-ops pending backend wiring. (Apr 2026)
 19. **Continuation generation for long documents** — when `stop_reason == 'max_tokens'` is detected (Claude hit the 16,000-token ceiling mid-document), automatically make a follow-up Claude call seeding the conversation with the truncated HTML and asking it to continue from where it left off, appending the result. This allows arbitrarily long documents to be generated gracefully without manual intervention. Requires: detecting truncation in `call_claude`, extracting the last complete HTML element as the resume point, and looping until `stop_reason == 'end_turn'` or a max-iteration guard is hit.
 
 ### Open Bug Log (Staging — Feb 2026)
@@ -307,7 +314,8 @@ a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB 
 | 38 | "Generate New Document" popup remains open after user clicks "Generate by Magic" — should close immediately and show only the floating generating card | Open | Fix attempted (setIsGenerating before await) but issue still present. Do not fix until further investigation. |
 | 39 | Floating generating card shows "(Dismiss to cancel)" — label is misleading since dismissing only stops polling and the document still saves | **Fixed (Mar 2026)** | Text changed to "(Keep open for live updates)". |
 | 40 | Outputs table Type column shows the internal type ID (e.g. "role_specification") instead of the user-friendly label (e.g. "Role Specification"). | **Fixed (Mar 2026)** | Backend `_run_generation_job` now looks up `artifact_types` table to store the friendly label in `output_type`. Frontend `getProjectOutputs` also applies a slug-to-label formatter as a retroactive fallback for existing DB rows. |
-| 41 | Project Details "Description" field is not saved — reopening "Edit Project" shows a blank Description field | Open | Not yet investigated. |
+| 41 | Project Details "Description" field is not saved — reopening "Edit Project" shows a blank Description field | **Fixed (Apr 2026)** | Three root causes: (1) `updateProject` in `supabase.js` silently dropped `description` — never mapped into `updateData`. (2) `createProject` also omitted `description` from the insert payload. (3) `CreateProjectPopup` built `formattedProject` without `description`, discarding the form value before it reached the API. All three fixed. |
+| — | "Edit Project Details" Description textarea showed existing text in gray (`text-gray-500`), making it indistinguishable from placeholder text — users could accidentally delete real data | **Fixed (Apr 2026)** | Changed all input/textarea fields in `ProjectHeaderEditPopup` from `text-gray-500` to `text-gray-900`; added a proper `placeholder` attribute to the description textarea. |
 | 42 | Cannot add or change a Candidate's profile picture in "Edit Candidate Profile" — clicking the photo icon overlay does not open the file chooser. Likely affects Interviewers as well — fix in both places when addressed. | Open | Not yet investigated. |
 
 ---
