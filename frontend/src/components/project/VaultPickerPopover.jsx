@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { MagnifyingGlassIcon, ArchiveBoxIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+
 /**
  * VaultPickerPopover
  *
@@ -41,7 +43,7 @@ export default function VaultPickerPopover({ projectId, selected, onConfirm, onC
   useEffect(() => {
     if (!projectId) return;
     setLoading(true);
-    fetch(`/api/projects/${projectId}/artifacts`)
+    fetch(`${BACKEND_URL}/api/projects/${projectId}/artifacts`)
       .then((r) => {
         if (!r.ok) throw new Error('Failed to load vault');
         return r.json();
