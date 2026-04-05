@@ -203,10 +203,11 @@ export default function AndroChatModal({ projectId, onClose, onSend }) {
         ...prev.slice(0, -1), // remove loading bubble
         { role: 'andro', content: response.response, document: response.document || null },
       ]);
-    } catch {
+    } catch (err) {
+      console.error('[AndroChatModal] send error:', err);
       setMessages((prev) => [
         ...prev.slice(0, -1),
-        { role: 'andro', content: 'Something went wrong. Please try again.', document: null },
+        { role: 'andro', content: `Error: ${err?.message || 'Unknown error'}`, document: null },
       ]);
     } finally {
       setIsSending(false);
