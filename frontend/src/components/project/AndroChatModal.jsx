@@ -207,7 +207,7 @@ export default function AndroChatModal({ projectId, onClose, onSend }) {
       console.error('[AndroChatModal] send error:', err);
       setMessages((prev) => [
         ...prev.slice(0, -1),
-        { role: 'andro', content: `Error: ${err?.message || 'Unknown error'}`, document: null },
+        { role: 'andro', content: 'Something went wrong. Please try again.', document: null },
       ]);
     } finally {
       setIsSending(false);
