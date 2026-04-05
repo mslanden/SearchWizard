@@ -18,6 +18,7 @@ from brain.knowledge_graph import get_entity_context
 from brain.relevance_ranker import rank_artifacts_for_blueprint, format_selected_artifacts_summary
 from brain.prompt_builder import build_generation_prompt
 from brain.embedder import get_embedding, cosine_similarity
+from brain.relevance_ranker import _parse_embedding
 
 
 async def build_brain_context(
@@ -185,7 +186,7 @@ async def build_chat_context(
     message_embedding = await get_embedding(user_message)
 
     def _score(artifact: dict) -> float:
-        art_emb = artifact.get('embedding')
+        art_emb = _parse_embedding(artifact.get('embedding'))
         if message_embedding and art_emb:
             return cosine_similarity(message_embedding, art_emb)
         return 0.0
