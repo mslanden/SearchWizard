@@ -1,64 +1,63 @@
-import { useState, useRef, useEffect } from 'react';
-import { PlusIcon, PaperClipIcon, ArchiveBoxIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
+import { useState } from 'react';
+import { PlusIcon } from '@heroicons/react/24/outline';
+import { supabase } from '../../lib/supabase';
+import AndroChatModal from './AndroChatModal';
 
-const menuItems = [
-  { label: 'Upload files or photos', icon: PaperClipIcon },
-  { label: 'Select from Project Vault', icon: ArchiveBoxIcon },
-  { label: 'Web Search', icon: MagnifyingGlassIcon },
-];
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
-export default function AndroChatBar() {
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const dropdownRef = useRef(null);
+export default function AndroChatBar({ projectId }) {
+  const [modalOpen, setModalOpen] = useState(false);
 
-  useEffect(() => {
-    const handler = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
+  const handleSend = async (payload) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    const res = await fetch(`${BACKEND_URL}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        project_id: projectId,
+        user_id: user?.id,
+        ...payload,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Request failed');
+    }
+    return res.json(); // { response, document }
+  };
 
   return (
-    <div className="bg-white dark:bg-dark-bg-secondary border border-gray-200 dark:border-dark-border rounded-lg shadow-sm px-4 py-3 mb-4 flex items-center gap-3">
-      {/* + button with dropdown */}
-      <div className="relative flex-shrink-0" ref={dropdownRef}>
+    <>
+      <div className="bg-white dark:bg-dark-bg-secondary border border-gray-200 dark:border-dark-border rounded-lg shadow-sm px-4 py-3 mb-4 flex items-center gap-3">
+        {/* + icon — decorative */}
+        <div className="p-1.5 text-gray-400">
+          <PlusIcon className="w-5 h-5" />
+        </div>
+
+        {/* Clickable prompt area */}
         <button
-          onClick={() => setDropdownOpen((o) => !o)}
-          className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary transition-colors"
-          aria-label="Add attachment"
+          onClick={() => setModalOpen(true)}
+          className="flex-1 text-left text-sm text-gray-400 dark:text-dark-text-muted"
         >
-          <PlusIcon className="w-5 h-5 text-gray-500 dark:text-dark-text-secondary" />
+          Ask Andro for help with this project...
         </button>
-        {dropdownOpen && (
-          <div className="absolute top-full left-0 mt-2 w-52 bg-white dark:bg-dark-bg-secondary border border-gray-200 dark:border-dark-border rounded-md shadow-md z-10">
-            {menuItems.map(({ label, icon: Icon }) => (
-              <button
-                key={label}
-                onClick={() => setDropdownOpen(false)}
-                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 dark:text-dark-text-secondary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors"
-              >
-                <Icon className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
+
+        {/* Ask Andro button */}
+        <button
+          onClick={() => setModalOpen(true)}
+          className="flex-shrink-0 bg-gray-900 dark:bg-gray-700 hover:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors whitespace-nowrap"
+        >
+          Ask Andro
+        </button>
       </div>
 
-      {/* Text input */}
-      <input
-        type="text"
-        placeholder="Ask Andro for help with this project..."
-        className="flex-1 bg-transparent outline-none text-sm text-gray-800 dark:text-dark-text placeholder-gray-400 dark:placeholder-dark-text-muted"
-      />
-
-      {/* Ask Andro button */}
-      <button className="flex-shrink-0 bg-gray-900 dark:bg-gray-700 hover:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors whitespace-nowrap">
-        Ask Andro
-      </button>
-    </div>
+      {modalOpen && (
+        <AndroChatModal
+          projectId={projectId}
+          onClose={() => setModalOpen(false)}
+          onSend={handleSend}
+        />
+      )}
+    </>
   );
 }

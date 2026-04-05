@@ -22,7 +22,7 @@ import asyncio
 from fastapi import FastAPI, HTTPException, Body, File, UploadFile, Form, Query, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from pipeline.pipeline_runner import run_pipeline_and_store
-from brain.brain import build_brain_context, call_claude
+from brain.brain import build_brain_context, call_claude, build_chat_context
 from brain.embedder import embed_and_store
 from pipeline.artifact_processor import process_artifact as process_artifact_fn
 from fastapi.middleware.cors import CORSMiddleware
@@ -1188,6 +1188,149 @@ async def process_content(request: ProcessContentRequest):
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing content: {str(e)}")
+
+# ---------------------------------------------------------------------------
+# Andro Chat — POST /api/chat
+# ---------------------------------------------------------------------------
+
+class ChatRequest(BaseModel):
+    project_id: str
+    user_id: str | None = None
+    message: str
+    history: list[dict] = []           # [{ role: "user"|"assistant", content: str }]
+    attachments: list[dict] = []       # [{ name: str, content: str }]
+    vault_artifact_ids: list[str] = [] # artifact IDs pinned by user from vault picker
+    web_search: bool = False
+
+
+import re as _re
+
+def _parse_andro_response(raw: str) -> tuple[str, dict | None]:
+    """
+    Split Andro's raw output into conversational text and an optional document.
+
+    Andro wraps generated documents in:
+      <andro-document filename="name.html">...HTML...</andro-document>
+
+    Returns (conversational_text, document_dict | None).
+    """
+    pattern = r'<andro-document\s+filename="([^"]+)">([\s\S]*?)</andro-document>'
+    match = _re.search(pattern, raw)
+    if not match:
+        return raw.strip(), None
+    filename = match.group(1).strip()
+    html_content = match.group(2).strip()
+    conversation = (raw[:match.start()] + raw[match.end():]).strip()
+    return conversation, {
+        'name': filename,
+        'content': html_content,
+        'mime_type': 'text/html',
+    }
+
+
+@app.post("/api/chat")
+async def andro_chat(request: ChatRequest):
+    """
+    Andro chat endpoint.
+
+    Builds project-aware context, calls Claude with the conversation history,
+    and returns a conversational response plus an optional downloadable document.
+    """
+    supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+    # Build system prompt with project context
+    try:
+        ctx = await build_chat_context(
+            supabase=supabase_client,
+            project_id=request.project_id,
+            user_message=request.message,
+            vault_artifact_ids=request.vault_artifact_ids or [],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to build chat context: {e}")
+
+    system_prompt = ctx['system_prompt']
+
+    # Assemble messages array from history + current turn
+    messages = []
+    for turn in request.history:
+        role = turn.get('role', 'user')
+        content = turn.get('content', '')
+        if role in ('user', 'assistant') and content:
+            messages.append({'role': role, 'content': content})
+
+    # Append any uploaded file content to the user message
+    user_content = request.message
+    if request.attachments:
+        attachment_block = '\n\n---\n**Attached files:**\n'
+        for att in request.attachments:
+            name = att.get('name', 'file')
+            content = att.get('content', '')
+            attachment_block += f'\n**{name}:**\n{content[:30_000]}\n'
+        user_content += attachment_block
+
+    messages.append({'role': 'user', 'content': user_content})
+
+    # Optionally enable web search
+    tools = None
+    if request.web_search:
+        tools = [{"type": "web_search_20250305", "name": "web_search"}]
+
+    # Call Claude
+    try:
+        def _sync_chat():
+            kwargs = dict(
+                model="claude-sonnet-4-6",
+                max_tokens=8000,
+                system=system_prompt,
+                messages=messages,
+            )
+            if tools:
+                kwargs["tools"] = tools
+            response = anthropic_client.messages.create(**kwargs)
+            # Extract text from response content blocks
+            text_parts = []
+            for block in response.content:
+                if hasattr(block, 'text'):
+                    text_parts.append(block.text)
+            return ''.join(text_parts)
+
+        import asyncio as _asyncio
+        loop = _asyncio.get_event_loop()
+        raw = await loop.run_in_executor(None, _sync_chat)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Claude call failed: {e}")
+
+    # Parse document out of response if present
+    conversation_text, document = _parse_andro_response(raw)
+
+    return {
+        'response': conversation_text,
+        'document': document,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Project vault artifacts list — GET /api/projects/{project_id}/artifacts
+# Used by the VaultPickerPopover in the chat modal.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/projects/{project_id}/artifacts")
+async def list_project_artifacts(project_id: str):
+    """
+    Return a lightweight list of all artifacts for a project (name, id, type).
+    Used by the vault picker in the Andro chat modal.
+    """
+    supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    try:
+        resp = supabase_client.table('artifacts').select(
+            'id, name, artifact_type, summary'
+        ).eq('project_id', project_id).order('name').execute()
+        return {'artifacts': resp.data or []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch artifacts: {e}")
+
 
 @app.post("/generate-document")
 async def generate_document_legacy():
