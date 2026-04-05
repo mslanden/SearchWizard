@@ -535,36 +535,65 @@ of whether headings are outlined/vector in the source PDF.
 
 ---
 
-## ADR-015 — Andro Chat Bar: Non-Functional Scaffold (Apr 2026)
+## ADR-015 — Andro Chat Bar: Non-Functional Scaffold → Superseded by ADR-016 (Apr 2026)
 
-**Status:** Active (scaffold only — backend not wired)
+**Status:** Superseded by ADR-016
+
+The `AndroChatBar` scaffold introduced in commit `bb02c61` was fully implemented in the same
+session. See ADR-016 for the complete implementation record.
+
+---
+
+## ADR-016 — Andro AI Chat: Full Implementation (Apr 2026)
+
+**Status:** Active (on staging)
 
 **Decision:**
-A non-functional `AndroChatBar` component has been added to the project detail page
-(`frontend/src/components/project/AndroChatBar.jsx`), positioned above the project header
-card. It presents the intended UI surface for an AI assistant ("Andro") integrated into
-the project context, but makes no API calls and has no state persistence.
+The `AndroChatBar` scaffold was activated as a full multi-turn AI assistant ("Andro") integrated
+into the project detail page. Clicking "Ask Andro" opens a modal overlay; all context is assembled
+server-side per turn; no chat history is persisted to the DB (in-memory React state only).
 
-**Component structure:**
-- `+` button → dropdown: Upload files or photos / Select from Project Vault / Web Search (all no-ops)
-- Text input: placeholder "Ask Andro for help with this project..."
-- Dark "Ask Andro" submit button (no-op)
+**Architecture:**
 
-**Reasoning:**
-- Placing the UI scaffold first allows UX feedback before backend implementation begins
-- Decouples frontend layout decisions from backend API design
-- The component location (above project header, full-width card style) establishes the
-  interaction pattern: Andro operates in the context of a specific project, with access
-  to its vault of artifacts
+| Layer | Detail |
+|-------|--------|
+| Modal UI | `AndroChatModal.jsx` — 2/3-screen overlay (expandable to 90%), backdrop-click-to-close, expand/collapse icon toggle |
+| Message rendering | `marked` (CommonJS) for markdown in Andro bubbles; `dangerouslySetInnerHTML` with Tailwind `prose` classes |
+| File attachments | Hidden `<input type="file" multiple>`, read client-side via FileReader (text or base64 data URL), included inline in request body — not persisted |
+| Vault picker | `VaultPickerPopover.jsx` — popover with search field + checkboxes; fetches `GET /api/projects/{id}/artifacts`; selected artifact IDs sent to backend, which fetches full content server-side |
+| Web search | Opt-in chip in input bar; sends `web_search: true`; backend passes `[{"type":"web_search_20250305","name":"web_search"}]` to Claude |
+| Document creation | Andro wraps HTML in `<andro-document filename="...">...</andro-document>` tags; `_parse_andro_response()` regex in `api.py` detects and splits; frontend renders inline Blob-URL download chip; Blob revoked on modal close |
+| Backend endpoint | `POST /api/chat` in `api.py` — synchronous (`_sync_chat` closure in thread pool executor); `ChatRequest` Pydantic model |
+| Context assembly | `build_chat_context()` in `brain/brain.py`: fetches `andro_persona` from `app_settings` table, all artifacts + entity context via `asyncio.gather`, embeds user message, cosine-ranks artifacts, builds system prompt with persona + project metadata + all artifact summaries + top-5 full-content artifacts + pinned vault selections |
+| Persona storage | `app_settings` Supabase table (`key TEXT PRIMARY KEY, value TEXT`) — persona editable in DB without code deploy |
 
-**Required future work:**
-1. Design and implement backend endpoint (likely `POST /api/projects/{id}/chat`)
-2. Wire `AndroChatBar` to send message + `project_id`; stream or poll response
-3. Implement the three attachment options (file upload, vault selector, web search)
-4. Decide whether chat history should be persisted per project in the DB
+**Key choices and reasoning:**
 
-**Files:**
-- `frontend/src/components/project/AndroChatBar.jsx` (new)
-- `frontend/src/app/projects/[id]/page.tsx` — renders `<AndroChatBar />` above `<ProjectHeader>`
+| Choice | Alternative | Reason |
+|--------|-------------|--------|
+| `marked` (CommonJS) for markdown | `react-markdown` v8/v10 | `react-markdown` v8 has JSX type conflicts with React 19 (`Cannot find namespace JSX` build failure). `react-markdown` v10 is ESM-only and fails Next.js bundling without `transpilePackages` for ~20 transitive deps. `marked` is CommonJS with no React dependency — drop-in via `dangerouslySetInnerHTML`. |
+| In-memory chat history (no DB persistence) | Supabase `chat_messages` table | Not needed at current scale; avoids schema migration and RLS complexity. Can be added later. |
+| `build_chat_context()` separate from `build_brain_context()` | Reuse `build_brain_context()` | `build_brain_context()` requires a `template_id` and is blueprint-coupled (raises 400 if no blueprint). Chat context needs different assembly: no template, no section ranking, just semantic similarity against the user's message. |
+| `_sync_chat` closure in thread pool | FastAPI `BackgroundTask` + polling | Chat is synchronous-feeling (user waits for response); polling adds UX complexity. Thread pool keeps the async FastAPI endpoint non-blocking while the sync Anthropic SDK call runs. |
+| Web search opt-in (chip toggle) | Always-on | Web search increases latency and cost. Opt-in keeps default responses fast and grounded in project documents. |
+| `app_settings` key/value table for persona | Hardcoded string in `brain.py` | Allows updating the persona without a backend redeploy. Single-row fetch per request (negligible cost). |
+| `name` field required in web search tool definition | `{"type": "web_search_20250305"}` alone | Anthropic API returns HTTP 400 `invalid_request_error` ("tools.0.web_search_20250305.name: Field required") when `name` is absent. |
 
-**Commits:** `bb02c61`
+**Files introduced:**
+- `frontend/src/components/project/AndroChatModal.jsx`
+- `frontend/src/components/project/VaultPickerPopover.jsx`
+- `backend/migrations/001_app_settings.sql` — creates `app_settings` table, seeds `andro_persona` row
+
+**Files modified:**
+- `frontend/src/components/project/AndroChatBar.jsx` — wires "Ask Andro" to open modal; `handleSend` posts to `POST /api/chat`
+- `frontend/src/app/projects/[id]/page.tsx` — passes `projectId` to `<AndroChatBar>`
+- `backend/api.py` — `ChatRequest` model, `_parse_andro_response()`, `POST /api/chat`, `GET /api/projects/{id}/artifacts`
+- `backend/brain/brain.py` — `call_claude()` updated (optional `system` + `tools` params); `build_chat_context()` added
+
+**Bugs found and fixed during deployment:**
+- `VaultPickerPopover` used relative URL `/api/projects/${id}/artifacts` → hit Next.js server. Fixed: prefix with `NEXT_PUBLIC_BACKEND_URL`.
+- pgvector `embedding` column returned as JSON string by Supabase REST API. `_score()` in `build_chat_context` passed raw string to `cosine_similarity` (numpy). Fixed: apply `_parse_embedding()` (already existed in `relevance_ranker.py` for the same reason — see ADR-012) before scoring.
+- Web search tool definition missing `name` field → HTTP 400. Fixed: `{"type": "web_search_20250305", "name": "web_search"}`.
+- `react-markdown` v10 (ESM-only) → Vercel build failure (`Cannot find namespace JSX` with React 19). Fixed: replaced with `marked`.
+
+**Commits:** `fd4218a` (scaffold), `bb02c61` (UI improvements), then Andro implementation session commits ending at `871b8f8`

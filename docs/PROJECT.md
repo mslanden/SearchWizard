@@ -216,7 +216,15 @@ a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB 
 - Staging environment (Railway + Vercel) — set up Feb 2026
 - Persistent header navigation — Projects / Transcription / Templates text links + Help icon (Apr 2026)
 - Project header simplification — trash icon delete with styled confirmation modal; description display; compact client · date layout (Apr 2026)
-- Andro chat bar scaffold (non-functional) — UI placeholder for future AI chat integration (Apr 2026)
+- **Andro AI Chat** — fully operational project-context AI assistant (Apr 2026):
+  - "Ask Andro" button opens a 2/3-screen modal overlay (expandable to 90%), with multi-turn conversation, auto-growing textarea, loading bubble
+  - System prompt assembled per-turn: Andro persona (from `app_settings` DB table) + all artifact summaries + top-5 semantically ranked full-content artifacts (OpenAI embedding + cosine similarity)
+  - File attachments: native OS file picker, content read client-side and included inline
+  - Project Vault picker: popover with search + checkboxes over all project artifacts; selected artifacts included by ID (backend fetches full content)
+  - Web search: opt-in chip; when active passes `tools=[{"type":"web_search_20250305","name":"web_search"}]` to Claude — citations included in response
+  - Document creation: Andro wraps HTML in `<andro-document filename="...">` tags; backend detects and returns as `{response, document}`; frontend renders inline `📄 Download` chip
+  - Markdown rendering via `marked` (CommonJS — avoids Next.js ESM bundling issues with react-markdown v10)
+  - Backend: `POST /api/chat` + `GET /api/projects/{id}/artifacts` in `backend/api.py`; `build_chat_context()` in `backend/brain/brain.py`
 - Project description persistence — fixed on both create and edit flows (Apr 2026)
 - Document DNA Blueprint Pipeline (V3) — async multi-stage golden example analysis (Feb 2026)
 - Project Brain V3 document generation — semantic artifact retrieval, section-aware prompt assembly, candidate/interviewer targeting, Preview Prompt mode (Feb 2026)
@@ -273,7 +281,7 @@ a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB 
 20. ✅ **Display project description on main project page** — Description now displayed in the project header card beneath the title. Client name and date compacted to a single line with `·` separator. Fixed description persistence on both create and edit flows. (Apr 2026)
 21. ✅ **Persistent top-level navigation** — Header now has Projects / Transcription / Templates text links and a Help icon (?) before the icon buttons. Transcription and Templates are placeholders (`href="#"`) pending implementation. (Apr 2026)
 22. ✅ **Project header simplification** — Removed "← Back to projects" link and standalone red Delete Project button from the project detail page. Delete moved into the project header card as a trash icon (gray → red on hover) next to the pencil. Triggers a styled `BasePopup` confirmation modal instead of the browser-native `confirm()` dialog. (Apr 2026)
-23. ✅ **Andro chat bar scaffold** — Non-functional `AndroChatBar` component added above the project header card. Has a "+" dropdown (Upload files or photos / Select from Project Vault / Web Search), placeholder text "Ask Andro for help with this project...", and a dark "Ask Andro" button. All interactions are no-ops pending backend wiring. (Apr 2026)
+23. ✅ **Andro AI Chat** — Fully operational project AI assistant (Apr 2026). Modal overlay, multi-turn conversation, file attachments, project vault picker, opt-in web search with citations, document creation + inline download, markdown rendering. Backend `POST /api/chat` + `GET /api/projects/{id}/artifacts`; `build_chat_context()` in `brain/brain.py`; Andro persona stored in `app_settings` table.
 19. **Continuation generation for long documents** — when `stop_reason == 'max_tokens'` is detected (Claude hit the 16,000-token ceiling mid-document), automatically make a follow-up Claude call seeding the conversation with the truncated HTML and asking it to continue from where it left off, appending the result. This allows arbitrarily long documents to be generated gracefully without manual intervention. Requires: detecting truncation in `call_claude`, extracting the last complete HTML element as the resume point, and looping until `stop_reason == 'end_turn'` or a max-iteration guard is hit.
 
 ### Open Bug Log (Staging — Feb 2026)
