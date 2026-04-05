@@ -1275,7 +1275,7 @@ async def andro_chat(request: ChatRequest):
     # Optionally enable web search
     tools = None
     if request.web_search:
-        tools = [{"type": "web_search_20250305"}]
+        tools = [{"type": "web_search_20250305", "name": "web_search"}]
 
     # Call Claude
     try:
