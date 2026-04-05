@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   XMarkIcon,
   ArrowsPointingOutIcon,
@@ -70,7 +72,17 @@ function AndroBubble({ content, document: doc, isLoading }) {
             </span>
           ) : (
             <>
-              <p className="whitespace-pre-wrap">{content}</p>
+              <div className="prose prose-sm max-w-none dark:prose-invert
+                prose-p:my-1 prose-p:leading-relaxed
+                prose-ul:my-1 prose-ul:pl-4
+                prose-ol:my-1 prose-ol:pl-4
+                prose-li:my-0.5
+                prose-strong:font-semibold
+                prose-a:text-blue-600 prose-a:underline
+                prose-code:bg-gray-100 prose-code:px-1 prose-code:rounded prose-code:text-xs
+                prose-headings:font-semibold prose-headings:mt-2 prose-headings:mb-1">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+              </div>
               {doc && blobUrlRef.current && (
                 <a
                   href={blobUrlRef.current}
