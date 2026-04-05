@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { marked } from 'marked';
 import {
   XMarkIcon,
   ArrowsPointingOutIcon,
@@ -72,7 +71,8 @@ function AndroBubble({ content, document: doc, isLoading }) {
             </span>
           ) : (
             <>
-              <div className="prose prose-sm max-w-none dark:prose-invert
+              <div
+                className="prose prose-sm max-w-none dark:prose-invert
                 prose-p:my-1 prose-p:leading-relaxed
                 prose-ul:my-1 prose-ul:pl-4
                 prose-ol:my-1 prose-ol:pl-4
@@ -80,9 +80,9 @@ function AndroBubble({ content, document: doc, isLoading }) {
                 prose-strong:font-semibold
                 prose-a:text-blue-600 prose-a:underline
                 prose-code:bg-gray-100 prose-code:px-1 prose-code:rounded prose-code:text-xs
-                prose-headings:font-semibold prose-headings:mt-2 prose-headings:mb-1">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-              </div>
+                prose-headings:font-semibold prose-headings:mt-2 prose-headings:mb-1"
+                dangerouslySetInnerHTML={{ __html: marked(content || '') }}
+              />
               {doc && blobUrlRef.current && (
                 <a
                   href={blobUrlRef.current}
