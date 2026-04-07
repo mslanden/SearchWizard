@@ -225,6 +225,7 @@ a structured **JSON Blueprint** stored in the `golden_examples.blueprint` JSONB 
   - Document creation: Andro wraps HTML in `<andro-document filename="...">` tags; backend detects and returns as `{response, document}`; frontend renders inline `📄 Download` chip
   - Markdown rendering via `marked` (CommonJS — avoids Next.js ESM bundling issues with react-markdown v10)
   - Backend: `POST /api/chat` + `GET /api/projects/{id}/artifacts` in `backend/api.py`; `build_chat_context()` in `backend/brain/brain.py`
+  - Modal close is X-button only — backdrop click disabled to prevent accidental in-session history loss
 - Project description persistence — fixed on both create and edit flows (Apr 2026)
 - Document DNA Blueprint Pipeline (V3) — async multi-stage golden example analysis (Feb 2026)
 - Project Brain V3 document generation — semantic artifact retrieval, section-aware prompt assembly, candidate/interviewer targeting, Preview Prompt mode (Feb 2026)
