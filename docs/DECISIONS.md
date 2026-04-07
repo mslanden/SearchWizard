@@ -553,7 +553,7 @@ session. See ADR-016 for the complete implementation record.
 
 ## ADR-016 — Andro AI Chat: Full Implementation (Apr 2026)
 
-**Status:** Active (on staging)
+**Status:** Active (on production — Apr 2026)
 
 **Decision:**
 The `AndroChatBar` scaffold was activated as a full multi-turn AI assistant ("Andro") integrated
@@ -564,7 +564,7 @@ server-side per turn; no chat history is persisted to the DB (in-memory React st
 
 | Layer | Detail |
 |-------|--------|
-| Modal UI | `AndroChatModal.jsx` — 2/3-screen overlay (expandable to 90%), backdrop-click-to-close, expand/collapse icon toggle |
+| Modal UI | `AndroChatModal.jsx` — 2/3-screen overlay (expandable to 90%), X-button-only close (backdrop click disabled to prevent accidental session loss), expand/collapse icon toggle |
 | Message rendering | `marked` (CommonJS) for markdown in Andro bubbles; `dangerouslySetInnerHTML` with Tailwind `prose` classes |
 | File attachments | Hidden `<input type="file" multiple>`, read client-side via FileReader (text or base64 data URL), included inline in request body — not persisted |
 | Vault picker | `VaultPickerPopover.jsx` — popover with search field + checkboxes; fetches `GET /api/projects/{id}/artifacts`; selected artifact IDs sent to backend, which fetches full content server-side |
@@ -602,5 +602,8 @@ server-side per turn; no chat history is persisted to the DB (in-memory React st
 - pgvector `embedding` column returned as JSON string by Supabase REST API. `_score()` in `build_chat_context` passed raw string to `cosine_similarity` (numpy). Fixed: apply `_parse_embedding()` (already existed in `relevance_ranker.py` for the same reason — see ADR-012) before scoring.
 - Web search tool definition missing `name` field → HTTP 400. Fixed: `{"type": "web_search_20250305", "name": "web_search"}`.
 - `react-markdown` v10 (ESM-only) → Vercel build failure (`Cannot find namespace JSX` with React 19). Fixed: replaced with `marked`.
+- Railway production adds trailing slash redirects (308): `/api/chat` → `/api/chat/`. Staging does not. Fixed: registered both slash and no-slash variants on all new endpoints (`@app.post("/api/chat")` + `@app.post("/api/chat/")`).
+- `NEXT_PUBLIC_BACKEND_URL` on production Vercel was missing `https://` prefix — all backend fetches (including fire-and-forget artifact processing) resolved as relative paths, hitting Next.js instead of Railway. Fixed via Vercel env var correction. Side effect: all production artifacts uploaded before the fix have empty `processed_content` — backfilled via `POST /api/brain/process-artifacts`.
+- Backdrop `onClick={onClose}` caused accidental chat session loss on any outside click. Fixed: removed backdrop click handler; X button is the only close trigger.
 
-**Commits:** `fd4218a` (scaffold), `bb02c61` (UI improvements), then Andro implementation session commits ending at `871b8f8`
+**Commits:** `fd4218a` (scaffold), `bb02c61` (UI improvements), Andro implementation session ending at `871b8f8`, production fixes ending at `d6f3a07`
