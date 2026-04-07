@@ -20,8 +20,9 @@ export default function AndroChatBar({ projectId }) {
       }),
     });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || 'Request failed');
+      const text = await res.text().catch(() => '');
+      const err = (() => { try { return JSON.parse(text); } catch { return {}; } })();
+      throw new Error(`HTTP ${res.status} → ${res.url.slice(0, 80)}: ${err.detail || text.slice(0, 120) || 'no body'}`);
     }
     return res.json(); // { response, document }
   };
