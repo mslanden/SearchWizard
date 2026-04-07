@@ -1228,6 +1228,7 @@ def _parse_andro_response(raw: str) -> tuple[str, dict | None]:
     }
 
 
+@app.post("/api/chat")
 @app.post("/api/chat/")
 async def andro_chat(request: ChatRequest):
     """
@@ -1316,6 +1317,7 @@ async def andro_chat(request: ChatRequest):
 # Used by the VaultPickerPopover in the chat modal.
 # ---------------------------------------------------------------------------
 
+@app.get("/api/projects/{project_id}/artifacts")
 @app.get("/api/projects/{project_id}/artifacts/")
 async def list_project_artifacts(project_id: str):
     """
