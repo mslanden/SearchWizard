@@ -43,7 +43,7 @@ export default function VaultPickerPopover({ projectId, selected, onConfirm, onC
   useEffect(() => {
     if (!projectId) return;
     setLoading(true);
-    fetch(`${BACKEND_URL}/api/projects/${projectId}/artifacts`)
+    fetch(`${BACKEND_URL}/api/projects/${projectId}/artifacts/`)
       .then((r) => {
         if (!r.ok) throw new Error('Failed to load vault');
         return r.json();
