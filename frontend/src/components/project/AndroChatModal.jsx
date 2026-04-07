@@ -240,7 +240,6 @@ export default function AndroChatModal({ projectId, onClose, onSend }) {
   return (
     <div
       className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center"
-      onClick={onClose}
     >
       <div
         className={`${modalSize} bg-white dark:bg-dark-bg-secondary rounded-xl shadow-2xl flex flex-col transition-all duration-200`}
