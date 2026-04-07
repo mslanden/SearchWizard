@@ -135,6 +135,13 @@ backend URL to `connect-src` in `next.config.js` on the `staging` branch resolve
 **Important:** The production `next.config.js` (`main` branch) should NOT include the
 staging URL. This change lives on `staging` only.
 
+**⚠️ Deployment gotcha — `NEXT_PUBLIC_BACKEND_URL` must include `https://`:**
+If this env var is set without the protocol (e.g. `searchwizard-production.up.railway.app`
+instead of `https://searchwizard-production.up.railway.app`), all backend fetches silently
+resolve as relative paths appended to the current page URL — producing a Next.js 404 that
+looks identical to a Railway routing error. Always verify the full URL including protocol
+when setting this variable in Vercel.
+
 **Pattern for future environments:**
 Any new environment (e.g. QA, preview) must add its backend URL to `connect-src` in
 `next.config.js` on its respective branch, AND add its frontend URL to the
